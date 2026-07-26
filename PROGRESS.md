@@ -9,19 +9,63 @@ The approved plan is in [PLAN.md](./PLAN.md).
 |---|---|
 | 1. Build the plugin | ✅ done, verified on a stock server |
 | 2. Drop Most Watched, revert server fork | ✅ done |
-| 3. Create GitHub repos | local repo committed; **not yet pushed** |
-| 4. CI and release artifacts | workflow written; not yet run |
+| 3. Create GitHub repos | ✅ all three public |
+| 4. CI and release artifacts | ✅ v1.0.0.0 released, install chain verified |
 
-**Resolved:** TMDb API key — the plugin requires the user to supply their own. The server's
-bundled key lives in `MediaBrowser.Providers`, which the plugin deliberately does not reference.
+**Live:**
+- https://github.com/AvonWilliams/jellyfin-browse-modes — plugin, docs, CI
+- https://github.com/AvonWilliams/jellyfin-web — fork, default branch `browse-modes`
+- https://github.com/AvonWilliams/jellyfin-androidtv — fork, default branch `browse-modes`
+- Plugin repo URL: `https://avonwilliams.github.io/jellyfin-browse-modes/manifest.json`
 
-**Still open:** APK signing (release keystore in GitHub Secrets vs shipping debug-signed builds
-that keep the `.debug` suffix and install alongside the official app); final repo names and
-visibility; whether the two client forks are pushed as real GitHub forks.
+**Resolved:** TMDb API key — the user supplies their own; the bundled key lives in
+`MediaBrowser.Providers`, which the plugin deliberately does not reference. APK signing — shipping
+debug-signed for now, which keeps the `.debug` suffix so it installs *beside* the official app
+rather than replacing it. That is arguably the better default; revisit if Play-style updates are
+ever wanted.
+
+**Still open:** nothing blocking. Nice-to-haves are CI in the two fork repos (both artifacts are
+currently built locally and uploaded by hand), light-theme contrast on web, and Decades / Age
+Rating on the TV client.
 
 ---
 
 ## 2026-07-26
+
+### ✅ Published — v1.0.0.0 live, install chain verified end to end
+
+Three public repos, plus a v1.0.0.0 release carrying the plugin zip, the web bundle and the APK.
+GitHub Pages serves the plugin manifest.
+
+The install chain was tested the way a stranger would hit it, not just assumed:
+
+1. `manifest.json` over Pages → HTTP 200
+2. followed its `sourceUrl` → HTTP 200
+3. md5 of the download matched the manifest checksum
+4. unpacked **that downloaded artifact** (CI-built, not the local build) into a stock
+   `jellyfin/jellyfin:12.0-rc3` container → `Loaded plugin: Browse Modes 1.0.0.0`
+
+Both fork default branches were switched to `browse-modes`, otherwise visitors would have landed
+on upstream's README.
+
+### ⚠️ Personal email leaked into the first public commits — remediated
+
+The initial commits were authored with a personal address, and pushed. Recording it because the
+remediation is not obvious:
+
+- Rewriting history and force-pushing **was not sufficient**. The orphaned commits stayed
+  reachable by SHA and still returned the address via the API — GitHub does not promptly
+  garbage-collect unreachable objects.
+- The token lacked `delete_repo`, so the repo could not be deleted.
+- Fix: renamed the repo to `jellyfin-browse-modes-leaked-delete-me` and made it **private**, which
+  immediately 404s the orphans to anonymous access. Then re-created the intended public repo from
+  a **freshly initialised** `.git` rather than a rewritten one.
+
+`git config user.email` is now set to the GitHub noreply address in all three repos. Verified
+every pushed commit across all three uses it. **The old private repo should still be deleted.**
+
+Docs had already been genericised of LAN IPs and `/home/avon` paths before the first commit, so
+the only leak was commit metadata.
 
 ### Phase 3/4 — repo assembled locally, ready to publish
 
