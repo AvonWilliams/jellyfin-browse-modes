@@ -124,6 +124,7 @@ working. Source: [AvonWilliams/jellyfin-androidtv](https://github.com/AvonWillia
 |---|---|
 | [User guide](docs/USER-GUIDE.md) | What each tile does, install walkthrough, troubleshooting |
 | [Technical reference](docs/TECHNICAL.md) | Every deviation from stock Jellyfin, and how to re-apply it to a new Jellyfin release |
+| [10.11 back-port scoping](docs/BACKPORT-10.11.md) | What it would take to support the stable channel. Parked, not started |
 
 ## Building from source
 
@@ -140,7 +141,11 @@ keeping it would have meant forking the server. Dropping one tile was the better
 
 ## Compatibility
 
-Built against **Jellyfin 12.0-rc3** and **Jellyfin Android TV 0.19.9**. A Jellyfin update will
+Built against **Jellyfin 12.0-rc3** and **Jellyfin Android TV 0.19.9**.
+
+> **Jellyfin 10.x (stable) is not supported.** The plugin is filtered out of the catalog by its
+> `targetAbi`, and the web bundle targets an app that 10.x does not have. See the
+> [back-port scoping](docs/BACKPORT-10.11.md) for what supporting it would involve. A Jellyfin update will
 overwrite the web build, and the TV app will not auto-update — see the technical reference for
 how to re-apply to a newer release.
 
