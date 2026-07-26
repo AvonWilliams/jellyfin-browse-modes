@@ -1,7 +1,7 @@
 # Progress log
 
 Running notes for the Browse Modes public-release work. Newest entries at the top.
-The approved plan is in [PLAN.md](./PLAN.md).
+Design rationale and the architecture decision live in [docs/TECHNICAL.md](./docs/TECHNICAL.md).
 
 ## Status at a glance
 
