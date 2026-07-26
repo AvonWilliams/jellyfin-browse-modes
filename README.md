@@ -40,7 +40,7 @@ Pick the clients you care about:
 Dashboard → Plugins → Repositories → **+**, and add:
 
 ```
-https://raw.githubusercontent.com/AvonWilliams/jellyfin-browse-modes/main/manifest.json
+https://avonwilliams.github.io/jellyfin-browse-modes/manifest.json
 ```
 
 Then Catalog → **Browse Modes** → Install, and restart Jellyfin.
