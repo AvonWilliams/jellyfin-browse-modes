@@ -32,6 +32,40 @@ Rating on the TV client.
 
 ## 2026-07-26
 
+### Decade and age rating pick tiles now have icons
+
+The sub-grids behind **Decades** and **Age Rating** rendered as bare text — the mode tiles had
+icons, the values behind them did not. New `constants/pickTiles.ts` supplies both.
+
+Decades use an era-appropriate icon with a warm-to-cool colour ramp so the grid reads as a
+timeline. Age ratings are graded by restrictiveness (green child → red `Explicit`), parsed from
+the country-prefixed codes Jellyfin returns.
+
+**A bug the test caught.** The country-prefix stripper `^[A-Z]{2}-` also ate the `TV-` from US
+television ratings, so `TV-MA` normalised to `MA` and came out *mature* instead of *adult*, and
+`TV-Y7` became an unrecognised `Y7` → *unrated*. Fixed with a negative lookahead. Worth noting
+that `tsc` and `eslint` were both clean throughout — only running real inputs through the
+function surfaced it. All 21 cases now correct, including `AU-MA15+`, `GB-12A`, `US-NC-17` and
+bare `16+`.
+
+Note the colours land in `browse.<hash>.chunk.js`, not the main bundle, since the browse route is
+an async chunk — grep the chunk, not `main.jellyfin.bundle.js`, when verifying a build.
+
+### Install-from-catalog gotchas (hit during first real install)
+
+Two things bit the first real install, neither a defect:
+
+1. **GitHub Pages had not finished its first build** when the repo URL was added, so Jellyfin
+   logged `404 (Not Found)` against the manifest. It resolved on its own about a minute later.
+   If a repo looks broken, check the server log — `An error occurred while accessing the plugin
+   manifest` names the exact cause.
+2. **The browser cached the plugin list.** The catalog kept showing the old response until the
+   cache was cleared manually; a normal reload was not enough.
+
+Also worth knowing: `routes/plugins/index.tsx:51` defaults the status filter to **Installed**, and
+uninstalled catalog entries have no `status`, so they are filtered out. Switch it to *Available*
+when looking for something not yet installed.
+
 ### ✅ Published — v1.0.0.0 live, install chain verified end to end
 
 Three public repos, plus a v1.0.0.0 release carrying the plugin zip, the web bundle and the APK.
