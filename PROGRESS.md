@@ -10,7 +10,11 @@ Design rationale and the architecture decision live in [docs/TECHNICAL.md](./doc
 | 1. Build the plugin | ✅ done, verified on a stock server |
 | 2. Drop Most Watched, revert server fork | ✅ done |
 | 3. Create GitHub repos | ✅ all three public |
-| 4. CI and release artifacts | ✅ v1.0.0.0 released, install chain verified |
+| 4. CI and release artifacts | ✅ v1.0.1.0 released |
+| 5. Deploy to production | ✅ live on the real server, all three clients |
+
+**Next session:** see [docs/NEXT-SESSION.md](./docs/NEXT-SESSION.md) — tile reordering and new
+tile ideas.
 
 **Live:**
 - https://github.com/AvonWilliams/jellyfin-browse-modes — plugin, docs, CI
@@ -31,6 +35,37 @@ Rating on the TV client.
 ---
 
 ## 2026-07-26
+
+### ✅ Live in production — real server upgraded and running
+
+Proxmox LXC `JellyClone` (CT 1056, Ubuntu 24.04) taken from **10.11.11 → 12.0-rc3**, then Browse
+Modes installed. Confirmed working on **web, Android phone and Android TV**.
+
+vzdump taken first: 11.75 GB, snapshot mode, clean finish.
+
+**There is no apt suite for preview builds** — `dists/unstable` and `dists/preview` both 404. RCs
+are direct `.deb` downloads from `repo.jellyfin.org/files/server/ubuntu/preview/v12.0-rc3/amd64/`.
+The Proxmox community-scripts installer only does stable and must not be run on this container
+again.
+
+12.0-rc3 depends on **`jellyfin-ffmpeg8`**, not the `jellyfin-ffmpeg7` that was installed. It is
+in the ordinary stable apt repo, so `apt install ./*.deb` resolved it and removed 7 cleanly.
+
+Two things that cost time, both mine:
+
+1. `curl -O` saves the URL-encoded filename literally, so the files landed as
+   `jellyfin_12.0-rc3%2Bubu2404_all.deb` while the install command referenced `+`. apt reported
+   "Unsupported file" for all three. Use `curl -o <cleanname>`.
+2. A transient DNS failure in the container silently produced a zero-byte `jellyfin-server.deb`.
+   Always verify with `dpkg-deb -f <file> Package Version` before installing — the md5 of the
+   good file is `26c744a2b94534756da0565b28c7bf57`.
+
+Post-upgrade the journal was full of errors from **third-party plugins**, not the migration:
+Meilisearch could not reach its backend, and `JavaScriptInjector` failed writing to
+`/usr/share/jellyfin/web/index.html` — the latter being exactly the fragile "plugin rewrites the
+web root" approach ruled out during research. Both were disabled to rule out interference.
+
+`apt-mark hold jellyfin-web` applied, since the package would otherwise replace the bundle.
 
 ### Decade and age rating pick tiles now have icons
 
