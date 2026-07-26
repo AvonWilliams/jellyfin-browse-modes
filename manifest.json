@@ -9,6 +9,14 @@
         "imageUrl": "",
         "versions": [
             {
+                "version": "1.0.1.0",
+                "changelog": "No functional change to the plugin. Rebuilt so every artifact in the release shares a version, and the assembly version now comes from the release tag.",
+                "targetAbi": "12.0.0.0",
+                "sourceUrl": "https://github.com/AvonWilliams/jellyfin-browse-modes/releases/download/v1.0.1.0/browse-modes_1.0.1.0.zip",
+                "checksum": "a03d9e84d09c8ce05c4627ac91537f07",
+                "timestamp": "2026-07-26T04:16:58Z"
+            },
+            {
                 "version": "1.0.0.0",
                 "changelog": "First release. Adds /Discover/{Trending,TopRated}/{Movies,Shows} and a scheduled task that keeps the TMDb lists warm.",
                 "targetAbi": "12.0.0.0",
