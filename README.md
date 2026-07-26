@@ -62,7 +62,45 @@ docker cp dist/. <your-jellyfin-container>:/jellyfin/jellyfin-web/
 Source: [AvonWilliams/jellyfin-web](https://github.com/AvonWilliams/jellyfin-web) (`browse-modes` branch).
 
 Then **hard-refresh your browser (Ctrl+Shift+R)**. Jellyfin caches its own interface aggressively,
-and without this the tiles will not appear and you will think the install failed.
+and without this the tiles will not appear and you will think the install failed. A normal reload
+is often not enough — clear the cache if it persists.
+
+> ### ⚠️ The web client does not survive a Jellyfin update
+>
+> In the official Docker image the web root is **baked into the image, not a mounted volume**.
+> Recreating the container or pulling a newer Jellyfin image silently restores the stock client
+> and the tiles simply vanish, with no error anywhere. The same applies to a package upgrade on a
+> bare-metal or LXC install, which replaces the web directory wholesale.
+>
+> **To make it stick,** mount the unpacked bundle over the web root instead of copying into it:
+>
+> ```
+> -v /path/to/dist:/jellyfin/jellyfin-web:ro
+> ```
+>
+> The mount then wins over whatever the image ships, so Jellyfin updates leave it alone. You will
+> still want to re-download the bundle when you move to a new Jellyfin version, since the client
+> and server are versioned together.
+>
+> **Not sure where your web root is?**
+>
+> ```bash
+> # Is a --webdir flag set?
+> docker exec <container> sh -c 'cat /proc/1/cmdline | tr "\0" " "'
+> # Otherwise, find index.html
+> docker exec <container> sh -c 'find / -name index.html -path "*web*" -not -path "*/config/*" 2>/dev/null'
+> ```
+>
+> Common locations are `/jellyfin/jellyfin-web` (official Docker image) and
+> `/usr/share/jellyfin/web` (Debian/Ubuntu packages, and most LXC installs).
+>
+> **Back up first**, so you can get the stock client back:
+> ```bash
+> docker exec <container> cp -a /jellyfin/jellyfin-web /jellyfin/jellyfin-web.bak
+> ```
+>
+> The **plugin** is unaffected by all of this — it lives in your config directory and survives
+> updates normally.
 
 ### 3. The Android TV app
 
