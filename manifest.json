@@ -1,0 +1,21 @@
+[
+    {
+        "guid": "0d5f6a1e-3b7c-4c62-9a4d-2e8f1b6c9a37",
+        "name": "Browse Modes",
+        "description": "Adds trending and top rated discover lists, narrowed to the items your library already has. Backs the Browse Modes tile grid in the web and Android TV clients.",
+        "overview": "Discover lists for the Browse Modes tile grid.",
+        "owner": "AvonWilliams",
+        "category": "General",
+        "imageUrl": "",
+        "versions": [
+            {
+                "version": "1.0.0.0",
+                "changelog": "First release. Adds /Discover/{Trending,TopRated}/{Movies,Shows} and a scheduled task that keeps the TMDb lists warm.",
+                "targetAbi": "12.0.0.0",
+                "sourceUrl": "https://github.com/AvonWilliams/jellyfin-browse-modes/releases/download/v1.0.0.0/browse-modes_1.0.0.0.zip",
+                "checksum": "1ef45ee72abbdd0f2f61ef484fb87f53",
+                "timestamp": "2026-07-26T03:43:31Z"
+            }
+        ]
+    }
+]

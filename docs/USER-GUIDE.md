@@ -86,7 +86,7 @@ a plugin, exactly like any other Jellyfin plugin.
 In Jellyfin: **Dashboard → Plugins → Repositories → +**, and add this URL:
 
 ```
-https://avonwilliams.github.io/jellyfin-browse-modes/manifest.json
+https://raw.githubusercontent.com/AvonWilliams/jellyfin-browse-modes/main/manifest.json
 ```
 
 Then go to **Catalog**, find **Browse Modes**, click Install, and restart Jellyfin.

@@ -40,7 +40,7 @@ Pick the clients you care about:
 Dashboard → Plugins → Repositories → **+**, and add:
 
 ```
-https://avonwilliams.github.io/jellyfin-browse-modes/manifest.json
+https://raw.githubusercontent.com/AvonWilliams/jellyfin-browse-modes/main/manifest.json
 ```
 
 Then Catalog → **Browse Modes** → Install, and restart Jellyfin.
@@ -52,18 +52,33 @@ Only **Trending** and **Top Rated** need it — every other tile works without o
 
 Download `jellyfin-web-browse-modes.zip` from [Releases](../../releases) and unpack it over your
 server's web directory (`/jellyfin/jellyfin-web` in the official Docker image, or wherever
-`--webdir` points).
+`--webdir` points):
+
+```bash
+unzip jellyfin-web-browse-modes.zip
+docker cp dist/. <your-jellyfin-container>:/jellyfin/jellyfin-web/
+```
+
+Source: [AvonWilliams/jellyfin-web](https://github.com/AvonWilliams/jellyfin-web) (`browse-modes` branch).
 
 Then **hard-refresh your browser (Ctrl+Shift+R)**. Jellyfin caches its own interface aggressively,
 and without this the tiles will not appear and you will think the install failed.
 
 ### 3. The Android TV app
 
-Download the APK from [Releases](../../releases) and sideload it. Full step-by-step instructions,
-including enabling ADB on the TV, are in the [user guide](docs/USER-GUIDE.md).
+Download the APK from [Releases](../../releases) and sideload it:
+
+```bash
+adb connect <TV-IP>:5555
+adb install -r jellyfin-androidtv-browse-modes-1.0.0-debug.apk
+```
+
+Full step-by-step instructions, including enabling ADB on the TV, are in the
+[user guide](docs/USER-GUIDE.md).
 
 It installs **alongside** the official app rather than replacing it, so your existing setup keeps
-working.
+working. Source: [AvonWilliams/jellyfin-androidtv](https://github.com/AvonWilliams/jellyfin-androidtv)
+(`browse-modes` branch).
 
 ## Documentation
 
