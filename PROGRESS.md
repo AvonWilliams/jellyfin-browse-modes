@@ -1,0 +1,183 @@
+# Progress log
+
+Running notes for the Browse Modes public-release work. Newest entries at the top.
+The approved plan is in [PLAN.md](./PLAN.md).
+
+## Status at a glance
+
+| Phase | State |
+|---|---|
+| 1. Build the plugin | ✅ done, verified on a stock server |
+| 2. Drop Most Watched, revert server fork | ✅ done |
+| 3. Create GitHub repos | local repo committed; **not yet pushed** |
+| 4. CI and release artifacts | workflow written; not yet run |
+
+**Resolved:** TMDb API key — the plugin requires the user to supply their own. The server's
+bundled key lives in `MediaBrowser.Providers`, which the plugin deliberately does not reference.
+
+**Still open:** APK signing (release keystore in GitHub Secrets vs shipping debug-signed builds
+that keep the `.debug` suffix and install alongside the official app); final repo names and
+visibility; whether the two client forks are pushed as real GitHub forks.
+
+---
+
+## 2026-07-26
+
+### Phase 3/4 — repo assembled locally, ready to publish
+
+Local git repo initialised and committed. Contents: plugin source, `docs/TECHNICAL.md` and
+`docs/USER-GUIDE.md` (both rewritten for the plugin architecture), `patches/` for the two client
+forks, a GitHub Actions workflow, MIT licence, and `reference/server-fork-original/`.
+
+The docs were **genericised before commit** — they previously carried LAN IPs (`192.168.1.6/.7`)
+and `/home/avon/...` paths, which have no place in a public repo. Replaced with `<TV-IP>`,
+`<SERVER-IP>` and relative paths.
+
+Doc sections rewritten because the plugin invalidated them: §1 (three forks → plugin + two
+forks, plus the evidence table for why the UI cannot be a plugin), §2 (server fork → plugin,
+including the two packaging requirements), §4.9, §5, §6 (Most Watched now "dropped, not
+deferred", with a note on how to bring it back as a ranked endpoint if ever wanted), §7.3, §7.4,
+§8 and §9.
+
+The CI workflow includes a guard worth keeping: it fails the build if any `Jellyfin.*` or
+`MediaBrowser.*` assembly appears in the plugin output, since that silently reintroduces the
+AssemblyLoadContext type-identity problem.
+
+Full stack re-verified after the Most Watched removal: web rebuilt (`mostwatched` absent from
+every chunk) and deployed onto the **stock + plugin** container. Server, plugin and web bundle
+all working with no forked server anywhere.
+
+### Phase 2 — Most Watched dropped, server fork reverted
+
+**Web.** Removed `GLOBAL_PLAY_COUNT` and `BrowseMode.MostWatched` from `types/browseMode.ts`, the
+`mostWatchedMode` definition and both list entries from `browseModes.ts`, and
+`BrowseModeMostWatched` from `en-us.json`. Also dropped two imports the removal orphaned — the
+`ItemSortBy` type import in `browseMode.ts` and `LocalFireDepartment` in `browseModes.ts`.
+`tsc --noEmit` and `eslint` both clean; `en-us.json` still parses.
+
+Tile counts are now **17 movie / 16 series** on web (was 18/17).
+
+**Server reverted to stock.** Rather than hand-editing (error-prone, and the tree has no git
+baseline to diff against), the four modified files were replaced with pristine copies fetched
+from upstream, and the two added files deleted:
+
+| File | Action |
+|---|---|
+| `Jellyfin.Data/Enums/ItemSortBy.cs` | restored from upstream |
+| `Jellyfin.Server.Implementations/Item/OrderMapper.cs` | restored from upstream |
+| `Jellyfin.Api/Jellyfin.Api.csproj` | restored from upstream |
+| `MediaBrowser.Providers/Plugins/Tmdb/TmdbClientManager.cs` | restored from upstream |
+| `Jellyfin.Api/Controllers/DiscoverController.cs` | deleted |
+| `MediaBrowser.Providers/Plugins/Tmdb/RefreshDiscoverListsTask.cs` | deleted |
+
+The upstream tag is **`v12.0-rc3`** — note *not* `v12.0.0-rc3`, which 404s.
+
+Because that tree is not a git repo and the revert is irreversible, all six originals were copied
+to `reference/server-fork-original/` in this repo first. They are superseded, but they are the
+only record of the pre-plugin implementation.
+
+`grep` for `GlobalPlayCount|DiscoverPagesToScan|RefreshDiscoverLists|WarmDiscoverLists|
+GetTrendingMovieIds` across the server tree now returns nothing.
+
+### ✅ Plugin verified on a STOCK Jellyfin server — the fork is no longer needed
+
+Ran `jellyfin/jellyfin:12.0-rc3` **unmodified** (container `jellyfin-stock-plugintest`, port 8098)
+with only the plugin dropped into `config/plugins/BrowseModes_1.0.0.0/`.
+
+Server log, with no errors anywhere:
+```
+Loaded assembly TMDbLib ... from /config/plugins/BrowseModes_1.0.0.0/TMDbLib.dll
+Loaded assembly Newtonsoft.Json ... from /config/plugins/BrowseModes_1.0.0.0/Newtonsoft.Json.dll
+Loaded assembly Jellyfin.Plugin.BrowseModes ...
+Loaded plugin: Browse Modes 1.0.0.0
+Refresh TMDb discover lists Completed after 0 minute(s) and 4 seconds
+```
+
+The scheduled task self-registered and ran on startup unprompted — confirming plugin
+`IScheduledTask` discovery works with no explicit registration.
+
+All four endpoints return 200 with TMDb rank preserved in `IndexNumber`:
+
+| Endpoint | Result |
+|---|---|
+| `/Discover/Trending/Movies` | 5 items — 20.The Devil Wears Prada, 52.Hokum, 82.Master of the Universe, 133.F1 |
+| `/Discover/TopRated/Movies` | 10 items — 5.The Godfather, 20.Pulp Fiction, 31.Fight Club, 49.Inception |
+| `/Discover/Trending/Shows` | 8 items — 11.Rick and Morty, 36.The Boys, 45.The Lord of the Rings, 84.South Park |
+| `/Discover/TopRated/Shows` | 5 items — 3.Breaking Bad, 20.Rick and Morty, 38.INVINCIBLE, 192.The Boys |
+
+Match counts line up with what the forked server produced, so behaviour is preserved.
+
+Also confirmed: plugin shows as `Active` in `GET /Plugins`, and its config page serves at
+`/web/ConfigurationPage?name=Browse%20Modes` (HTTP 200, renders the API key field).
+
+**Test API key note:** the check used Jellyfin's own bundled TMDb key, which is a public constant
+in the server source. That is fine for testing but is *not* settled for release — see open
+decisions at the top.
+
+### Plugin code complete, builds clean
+
+All seven files written; `dotnet build -c Release` succeeds with **0 warnings, 0 errors**.
+
+Two packaging details that were not obvious and are worth keeping:
+
+1. **`CopyLocalLockFileAssemblies=true` is required.** A library build does not copy NuGet
+   dependencies to its output, and a plugin is loaded from a folder rather than through
+   `deps.json` — so the first build produced only `Jellyfin.Plugin.BrowseModes.dll` and TMDbLib
+   would have been missing at runtime.
+2. **`ExcludeAssets="runtime"` on all four Jellyfin packages.** With (1) turned on they would
+   otherwise be copied into the plugin folder, and `PluginManager` loads every DLL there into the
+   plugin's own AssemblyLoadContext — giving duplicate type identities for server-provided types.
+
+Output is now exactly right: `Jellyfin.Plugin.BrowseModes.dll`, `TMDbLib.dll`,
+`Newtonsoft.Json.dll` (TMDbLib's own dependency) and nothing else.
+
+Package versions: `Jellyfin.Controller/Model/Data/Extensions` all exist on nuget.org at
+**`12.0.0-rc3`**, exactly matching the server — no version guessing needed.
+
+Adjustments made while porting, versus the in-tree original:
+
+- `BaseJellyfinApiController` → `ControllerBase` plus explicit `[ApiController] [Route("Discover")]
+  [Produces] [Authorize]`, keeping the literal route so existing client paths are unchanged.
+- `RequestHelpers.GetUserId` is `internal` to Jellyfin.Api → reimplemented as `ResolveUserId`,
+  reading the `Jellyfin-UserId` claim with the same admin check. One deliberate behaviour change:
+  the original throws `SecurityException` when a non-admin names another user; this falls back to
+  the authenticated user instead, since an unhandled throw from a plugin is worse than a
+  degraded result.
+- `CommaDelimitedCollectionModelBinder` lives in Jellyfin.Api → `fields` is taken as `string?` and
+  split by hand, ignoring unrecognised names.
+- `TmdbClientManager.Dispose` disposed the **shared** container `IMemoryCache` (a latent upstream
+  bug). `TmdbDiscoverClient` owns a private `MemoryCache` and disposes only that.
+- `DiscoverPagesToScan` and cache duration are now plugin config rather than constants.
+
+### Phase 1 started — scaffolding
+
+Created `jellyfin-browse-modes/` as the umbrella repo, with `plugin/Jellyfin.Plugin.BrowseModes/`
+inside it. Deliberately a sibling of the existing repos rather than nested in any of them, so the
+existing tree stays untouched until the plugin is proven.
+
+Environment checks before starting:
+- `dotnet` 10.0.110 present system-wide — no local toolchain needed for the plugin, unlike the
+  Android and web builds.
+- nuget.org is the only configured source (`nuget.config` does `<clear/>` first), which is fine:
+  every package the plugin needs is published there.
+
+### Research conclusions carried in from planning
+
+Two findings drive the whole design and are worth not re-deriving:
+
+1. **The server half can be a plugin.** `IUserManager`, `ILibraryManager`, `IDtoService` are all in
+   the published `Jellyfin.Controller` package; `IScheduledTask` is in `Jellyfin.Model` and plugin
+   tasks are auto-discovered (`ApplicationHost.cs:424`); plugin controllers get routed
+   (`ApiServiceCollectionExtensions.cs:158-161`).
+2. **The UI cannot be.** Plugin pages render only via `ServerContentPage`, used once at
+   `apps/dashboard/routes/routes.tsx:49` behind `ConnectionRequired level='admin'`. No `CustomJs`
+   counterpart to `CustomCss`. The route table is a module-local const built at import
+   (`RootAppRouter.tsx:22`). `pluginManager.js:97` is a build-time webpack context import. So the
+   tile page needs a `jellyfin-web` fork, permanently.
+
+Consequence for users: TV needs **plugin + APK**; browser/phone needs **plugin + forked web
+bundle**. Server stays stock in both cases.
+
+Only Trending and Top Rated actually depend on the plugin — every other tile is a plain sort or
+filter that stock Jellyfin already serves. `DiscoverFragment` catches a failed fetch and shows the
+empty-state message, so an APK without the plugin degrades gracefully rather than crashing.

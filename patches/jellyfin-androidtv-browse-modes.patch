@@ -1,0 +1,1099 @@
+diff --git a/app/src/main/java/org/jellyfin/androidtv/constant/Extras.kt b/app/src/main/java/org/jellyfin/androidtv/constant/Extras.kt
+index 43c3f0a..a1a8c2b 100644
+--- a/app/src/main/java/org/jellyfin/androidtv/constant/Extras.kt
++++ b/app/src/main/java/org/jellyfin/androidtv/constant/Extras.kt
+@@ -4,4 +4,6 @@ object Extras {
+ 	const val Folder = "folder"
+ 	const val IsLiveTvSeriesRecordings = "is_livetv_series_recordings"
+ 	const val IncludeType = "type_include"
++	const val BrowseMode = "browse_mode"
++	const val Studio = "studio"
+ }
+diff --git a/app/src/main/java/org/jellyfin/androidtv/preference/LibraryPreferences.kt b/app/src/main/java/org/jellyfin/androidtv/preference/LibraryPreferences.kt
+index 2c499ed..d7668f3 100644
+--- a/app/src/main/java/org/jellyfin/androidtv/preference/LibraryPreferences.kt
++++ b/app/src/main/java/org/jellyfin/androidtv/preference/LibraryPreferences.kt
+@@ -22,6 +22,11 @@ class LibraryPreferences(
+ 		val imageType = enumPreference("ImageType", ImageType.POSTER)
+ 		val gridDirection = enumPreference("GridDirection", GridDirection.HORIZONTAL)
+ 		val enableSmartScreen = booleanPreference("SmartScreen", false)
++		val enableBrowseModes = booleanPreference("BrowseModes", true)
++
++		// Set once a browse mode has seeded its preset, so that a sort the user picks inside a
++		// mode afterwards is not overwritten on the next visit.
++		val browseModeSeeded = booleanPreference("BrowseModeSeeded", false)
+ 
+ 		// Filters
+ 		val filterFavoritesOnly = booleanPreference("FilterFavoritesOnly", false)
+diff --git a/app/src/main/java/org/jellyfin/androidtv/ui/browsing/DisplayPreferencesScreen.kt b/app/src/main/java/org/jellyfin/androidtv/ui/browsing/DisplayPreferencesScreen.kt
+index fb1ce3d..0631eff 100644
+--- a/app/src/main/java/org/jellyfin/androidtv/ui/browsing/DisplayPreferencesScreen.kt
++++ b/app/src/main/java/org/jellyfin/androidtv/ui/browsing/DisplayPreferencesScreen.kt
+@@ -43,6 +43,14 @@ class DisplayPreferencesScreen : OptionsFragment() {
+ 			}
+ 
+ 			if (allowViewSelection) {
++				checkbox {
++					setTitle(R.string.pref_enable_browse_modes)
++					contentOn = requireContext().getString(R.string.pref_enable_browse_modes_description)
++					contentOff = contentOn
++
++					bind(libraryPreferences, LibraryPreferences.enableBrowseModes)
++				}
++
+ 				checkbox {
+ 					setTitle(R.string.enable_smart_view)
+ 					contentOn = requireContext().getString(R.string.enable_smart_view_description)
+diff --git a/app/src/main/java/org/jellyfin/androidtv/ui/browsing/browsemodes/BrowseModeTilePresenter.kt b/app/src/main/java/org/jellyfin/androidtv/ui/browsing/browsemodes/BrowseModeTilePresenter.kt
+new file mode 100644
+index 0000000..819a567
+--- /dev/null
++++ b/app/src/main/java/org/jellyfin/androidtv/ui/browsing/browsemodes/BrowseModeTilePresenter.kt
+@@ -0,0 +1,109 @@
++package org.jellyfin.androidtv.ui.browsing.browsemodes
++
++import android.view.ViewGroup
++import android.widget.FrameLayout
++import androidx.compose.foundation.Image
++import androidx.compose.foundation.background
++import androidx.compose.foundation.layout.Arrangement
++import androidx.compose.foundation.layout.Box
++import androidx.compose.foundation.layout.Column
++import androidx.compose.foundation.layout.padding
++import androidx.compose.foundation.layout.size
++import androidx.compose.foundation.shape.RoundedCornerShape
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.draw.clip
++import androidx.compose.ui.graphics.ColorFilter
++import androidx.compose.ui.platform.ComposeView
++import androidx.compose.ui.res.colorResource
++import androidx.compose.ui.res.painterResource
++import androidx.compose.ui.text.style.TextAlign
++import androidx.compose.ui.unit.dp
++import androidx.compose.ui.unit.sp
++import androidx.leanback.widget.Presenter
++import org.jellyfin.androidtv.R
++import org.jellyfin.androidtv.ui.base.Text
++
++/**
++ * Draws a browse mode as a wide tile with its name centred.
++ *
++ * Kept separate from [org.jellyfin.androidtv.ui.presentation.GridButtonPresenter], which sizes
++ * itself around an image and leaves a text-only button too short to read as a tile.
++ */
++class BrowseModeTilePresenter : Presenter() {
++	private companion object {
++		// Four of these plus leanback's own padding have to fit the width of a 720p TV, which at
++		// its usual density is only around 960dp — 220dp wide overflowed the last column.
++		const val TILE_WIDTH = 200
++		const val TILE_HEIGHT = 112
++		const val ICON_SIZE = 32
++	}
++
++	private class ComposeViewWrapper(composeView: ComposeView) : FrameLayout(composeView.context) {
++		init {
++			isFocusable = true
++			isFocusableInTouchMode = true
++			descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
++			addView(composeView)
++		}
++
++		// Hack to prevent Compose crash with leanback presenters
++		override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
++			if (isAttachedToWindow) super.onMeasure(widthMeasureSpec, heightMeasureSpec)
++			else setMeasuredDimension(widthMeasureSpec, heightMeasureSpec)
++		}
++	}
++
++	inner class ViewHolder(
++		private val composeView: ComposeView,
++	) : Presenter.ViewHolder(ComposeViewWrapper(composeView)) {
++		fun bind(tile: BrowseModeTile) = composeView.setContent {
++			Box(
++				contentAlignment = Alignment.Center,
++				modifier = Modifier
++					.size(TILE_WIDTH.dp, TILE_HEIGHT.dp)
++					.clip(RoundedCornerShape(4.dp))
++					.background(colorResource(R.color.button_default_normal_background))
++			) {
++				Column(
++					horizontalAlignment = Alignment.CenterHorizontally,
++					verticalArrangement = Arrangement.spacedBy(6.dp),
++					modifier = Modifier.padding(horizontal = 12.dp)
++				) {
++					Image(
++						painter = painterResource(tile.definition.icon),
++						contentDescription = null,
++						colorFilter = tile.definition.iconTint
++							?.let { ColorFilter.tint(colorResource(it)) },
++						modifier = Modifier.size(ICON_SIZE.dp)
++					)
++
++					Text(
++						text = tile.label,
++						color = colorResource(R.color.button_default_normal_text),
++						fontSize = 16.sp,
++						textAlign = TextAlign.Center,
++					)
++				}
++			}
++		}
++	}
++
++	override fun onCreateViewHolder(parent: ViewGroup): ViewHolder =
++		ViewHolder(ComposeView(parent.context))
++
++	override fun onBindViewHolder(viewHolder: Presenter.ViewHolder, item: Any?) {
++		if (viewHolder !is ViewHolder || item !is BrowseModeTile) return
++
++		viewHolder.bind(item)
++	}
++
++	override fun onUnbindViewHolder(viewHolder: Presenter.ViewHolder) = Unit
++	override fun onViewAttachedToWindow(viewHolder: Presenter.ViewHolder) = Unit
++}
++
++/** A single tile in the browse modes grid. */
++data class BrowseModeTile(
++	val definition: BrowseModeDefinition,
++	val label: String,
++)
+diff --git a/app/src/main/java/org/jellyfin/androidtv/ui/browsing/browsemodes/BrowseModes.kt b/app/src/main/java/org/jellyfin/androidtv/ui/browsing/browsemodes/BrowseModes.kt
+new file mode 100644
+index 0000000..c3e5572
+--- /dev/null
++++ b/app/src/main/java/org/jellyfin/androidtv/ui/browsing/browsemodes/BrowseModes.kt
+@@ -0,0 +1,243 @@
++package org.jellyfin.androidtv.ui.browsing.browsemodes
++
++import androidx.annotation.ColorRes
++import androidx.annotation.DrawableRes
++import androidx.annotation.StringRes
++import org.jellyfin.androidtv.R
++import org.jellyfin.sdk.model.api.CollectionType
++import org.jellyfin.sdk.model.api.ItemSortBy
++import org.jellyfin.sdk.model.api.SortOrder
++
++/**
++ * The ways a library can be browsed, offered as a grid of tiles when the library is opened.
++ *
++ * The key is used to scope the display preferences of each mode, so it must stay stable once
++ * shipped or users lose the sorting they picked inside a mode.
++ */
++enum class BrowseMode(val key: String) {
++	ALL("all"),
++	GENRES("genres"),
++	STUDIOS("studios"),
++	JUST_ADDED("justadded"),
++	NEW_RELEASES("newreleases"),
++	RANDOM("random"),
++	HIGHEST_RATED("highestrated"),
++	TOP_RATED("toprated"),
++	TRENDING("trending"),
++	BEST_UNSEEN("bestunseen"),
++	CRITICS_PICKS("criticspicks"),
++	UNWATCHED("unwatched"),
++	FAVORITES("favorites"),
++	RECENTLY_PLAYED("recentlyplayed"),
++	LONGEST("longest"),
++}
++
++/**
++ * The sort and filters a mode starts out with. Seeded once into the mode's own preference store,
++ * so a sort the user picks inside a mode afterwards is kept.
++ */
++data class BrowsePreset(
++	val sortBy: ItemSortBy? = null,
++	val sortOrder: SortOrder? = null,
++	val unwatchedOnly: Boolean = false,
++	val favoritesOnly: Boolean = false,
++)
++
++data class BrowseModeDefinition(
++	val mode: BrowseMode,
++	@field:StringRes val label: Int,
++	@field:DrawableRes val icon: Int,
++	/** Applied to the icon at draw time. Null keeps whatever colours the drawable carries. */
++	@field:ColorRes val iconTint: Int? = null,
++	/** Seeded over the library's defaults. Absent means the library's plain item grid. */
++	val preset: BrowsePreset? = null,
++	/** Opens an existing screen rather than the item grid. */
++	val destination: BrowseModeDestination? = null,
++)
++
++/** Screens reachable from a tile that are not the item grid. */
++enum class BrowseModeDestination {
++	GENRES,
++	STUDIOS,
++
++	/** A server-ranked list fetched from the custom Discover endpoints. */
++	DISCOVER,
++}
++
++private val allMode = BrowseModeDefinition(
++	mode = BrowseMode.ALL,
++	label = R.string.lbl_all_items,
++	icon = R.drawable.ic_grid,
++	iconTint = R.color.browse_mode_all,
++)
++
++private val genresMode = BrowseModeDefinition(
++	mode = BrowseMode.GENRES,
++	label = R.string.lbl_genres,
++	icon = R.drawable.ic_masks,
++	iconTint = R.color.browse_mode_genres,
++	destination = BrowseModeDestination.GENRES,
++)
++
++private val studiosMode = BrowseModeDefinition(
++	mode = BrowseMode.STUDIOS,
++	label = R.string.lbl_studios,
++	icon = R.drawable.ic_clapperboard,
++	iconTint = R.color.browse_mode_studios,
++	destination = BrowseModeDestination.STUDIOS,
++)
++
++// Series libraries call the same thing networks.
++private val networksMode = studiosMode.copy(
++	label = R.string.lbl_networks,
++	icon = R.drawable.ic_tv,
++	iconTint = R.color.browse_mode_networks,
++)
++
++private val topRatedMode = BrowseModeDefinition(
++	mode = BrowseMode.TOP_RATED,
++	label = R.string.lbl_browse_mode_top_rated,
++	icon = R.drawable.ic_medal,
++	iconTint = R.color.browse_mode_top_rated,
++	destination = BrowseModeDestination.DISCOVER,
++)
++
++private val trendingMode = BrowseModeDefinition(
++	mode = BrowseMode.TRENDING,
++	label = R.string.lbl_browse_mode_trending,
++	icon = R.drawable.ic_trending_up,
++	iconTint = R.color.browse_mode_trending,
++	destination = BrowseModeDestination.DISCOVER,
++)
++
++private val justAddedMode = BrowseModeDefinition(
++	mode = BrowseMode.JUST_ADDED,
++	label = R.string.lbl_browse_mode_just_added,
++	icon = R.drawable.ic_add,
++	iconTint = R.color.browse_mode_just_added,
++	preset = BrowsePreset(ItemSortBy.DATE_CREATED, SortOrder.DESCENDING),
++)
++
++private val newReleasesMode = BrowseModeDefinition(
++	mode = BrowseMode.NEW_RELEASES,
++	label = R.string.lbl_browse_mode_new_releases,
++	icon = R.drawable.ic_new_releases,
++	iconTint = R.color.browse_mode_new_releases,
++	preset = BrowsePreset(ItemSortBy.PREMIERE_DATE, SortOrder.DESCENDING),
++)
++
++private val randomMode = BrowseModeDefinition(
++	mode = BrowseMode.RANDOM,
++	label = R.string.random,
++	icon = R.drawable.ic_shuffle,
++	iconTint = R.color.browse_mode_random,
++	preset = BrowsePreset(ItemSortBy.RANDOM, SortOrder.ASCENDING),
++)
++
++private val highestRatedMode = BrowseModeDefinition(
++	mode = BrowseMode.HIGHEST_RATED,
++	label = R.string.lbl_browse_mode_highest_rated,
++	icon = R.drawable.ic_star,
++	iconTint = R.color.browse_mode_highest_rated,
++	preset = BrowsePreset(ItemSortBy.COMMUNITY_RATING, SortOrder.DESCENDING),
++)
++
++// The best thing you own but have not got to yet.
++private val bestUnseenMode = BrowseModeDefinition(
++	mode = BrowseMode.BEST_UNSEEN,
++	label = R.string.lbl_browse_mode_best_unseen,
++	icon = R.drawable.ic_lightbulb,
++	iconTint = R.color.browse_mode_best_unseen,
++	preset = BrowsePreset(ItemSortBy.COMMUNITY_RATING, SortOrder.DESCENDING, unwatchedOnly = true),
++)
++
++private val criticsPicksMode = BrowseModeDefinition(
++	mode = BrowseMode.CRITICS_PICKS,
++	label = R.string.lbl_browse_mode_critics_picks,
++	icon = R.drawable.ic_rt_fresh,
++	preset = BrowsePreset(ItemSortBy.CRITIC_RATING, SortOrder.DESCENDING),
++)
++
++private val unwatchedMode = BrowseModeDefinition(
++	mode = BrowseMode.UNWATCHED,
++	label = R.string.lbl_unwatched,
++	icon = R.drawable.ic_unwatch,
++	iconTint = R.color.browse_mode_unwatched,
++	preset = BrowsePreset(unwatchedOnly = true),
++)
++
++private val favoritesMode = BrowseModeDefinition(
++	mode = BrowseMode.FAVORITES,
++	label = R.string.lbl_favorites,
++	icon = R.drawable.ic_heart,
++	iconTint = R.color.browse_mode_favorites,
++	preset = BrowsePreset(favoritesOnly = true),
++)
++
++private val longestMode = BrowseModeDefinition(
++	mode = BrowseMode.LONGEST,
++	label = R.string.lbl_browse_mode_longest,
++	icon = R.drawable.ic_time,
++	iconTint = R.color.browse_mode_longest,
++	preset = BrowsePreset(ItemSortBy.RUNTIME, SortOrder.DESCENDING),
++)
++
++// Series record their last play against the series rather than the episode, matching the sort
++// the item grid itself offers for each collection type.
++private val movieRecentlyPlayedMode = BrowseModeDefinition(
++	mode = BrowseMode.RECENTLY_PLAYED,
++	label = R.string.lbl_browse_mode_recently_played,
++	icon = R.drawable.ic_resume,
++	iconTint = R.color.browse_mode_recently_played,
++	preset = BrowsePreset(ItemSortBy.DATE_PLAYED, SortOrder.DESCENDING),
++)
++
++private val seriesRecentlyPlayedMode = movieRecentlyPlayedMode.copy(
++	preset = BrowsePreset(ItemSortBy.SERIES_DATE_PLAYED, SortOrder.DESCENDING),
++)
++
++private val movieBrowseModes = listOf(
++	allMode,
++	unwatchedMode,
++	justAddedMode,
++	bestUnseenMode,
++	randomMode,
++	favoritesMode,
++	genresMode,
++	highestRatedMode,
++	topRatedMode,
++	trendingMode,
++	newReleasesMode,
++	studiosMode,
++	movieRecentlyPlayedMode,
++	criticsPicksMode,
++	longestMode,
++)
++
++// Critics' picks is left out because almost no series carry a critic rating.
++private val seriesBrowseModes = listOf(
++	allMode,
++	unwatchedMode,
++	justAddedMode,
++	bestUnseenMode,
++	randomMode,
++	favoritesMode,
++	genresMode,
++	highestRatedMode,
++	topRatedMode,
++	trendingMode,
++	newReleasesMode,
++	networksMode,
++	seriesRecentlyPlayedMode,
++	longestMode,
++)
++
++/**
++ * The browse modes offered for a library. A collection type without modes keeps the stock
++ * behaviour of opening straight into its own screen.
++ */
++fun getBrowseModes(collectionType: CollectionType?) = when (collectionType) {
++	CollectionType.MOVIES -> movieBrowseModes
++	CollectionType.TVSHOWS -> seriesBrowseModes
++	else -> null
++}
+diff --git a/app/src/main/java/org/jellyfin/androidtv/ui/browsing/browsemodes/BrowseModesFragment.kt b/app/src/main/java/org/jellyfin/androidtv/ui/browsing/browsemodes/BrowseModesFragment.kt
+new file mode 100644
+index 0000000..88a1cbc
+--- /dev/null
++++ b/app/src/main/java/org/jellyfin/androidtv/ui/browsing/browsemodes/BrowseModesFragment.kt
+@@ -0,0 +1,101 @@
++package org.jellyfin.androidtv.ui.browsing.browsemodes
++
++import android.os.Bundle
++import androidx.leanback.app.VerticalGridSupportFragment
++import androidx.leanback.widget.ArrayObjectAdapter
++import androidx.leanback.widget.OnItemViewClickedListener
++import androidx.leanback.widget.VerticalGridPresenter
++import androidx.lifecycle.lifecycleScope
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.launch
++import kotlinx.coroutines.withContext
++import kotlinx.serialization.json.Json
++import org.jellyfin.androidtv.constant.Extras
++import org.jellyfin.androidtv.preference.LibraryPreferences
++import org.jellyfin.androidtv.preference.PreferencesRepository
++import org.jellyfin.androidtv.ui.navigation.Destinations
++import org.jellyfin.androidtv.ui.navigation.NavigationRepository
++import org.jellyfin.androidtv.util.sdk.compat.copyWithDisplayPreferencesId
++import org.jellyfin.sdk.model.api.BaseItemDto
++import org.jellyfin.sdk.model.api.BaseItemKind
++import org.jellyfin.sdk.model.api.CollectionType
++import org.koin.android.ext.android.inject
++
++/**
++ * The grid of tiles shown when a library is opened, each tile a way of browsing that library.
++ */
++class BrowseModesFragment : VerticalGridSupportFragment() {
++	private companion object {
++		const val COLUMNS = 4
++	}
++
++	private val navigationRepository by inject<NavigationRepository>()
++	private val preferencesRepository by inject<PreferencesRepository>()
++
++	private lateinit var folder: BaseItemDto
++
++	override fun onCreate(savedInstanceState: Bundle?) {
++		super.onCreate(savedInstanceState)
++
++		folder = Json.decodeFromString<BaseItemDto>(requireArguments().getString(Extras.Folder)!!)
++		title = folder.name
++
++		setGridPresenter(VerticalGridPresenter().apply { numberOfColumns = COLUMNS })
++
++		adapter = ArrayObjectAdapter(BrowseModeTilePresenter()).apply {
++			getBrowseModes(folder.collectionType).orEmpty().forEach { definition ->
++				add(BrowseModeTile(definition, getString(definition.label)))
++			}
++		}
++
++		onItemViewClickedListener = OnItemViewClickedListener { _, item, _, _ ->
++			if (item is BrowseModeTile) open(item.definition)
++		}
++	}
++
++	private fun open(definition: BrowseModeDefinition) {
++		val itemType = when (folder.collectionType) {
++			CollectionType.TVSHOWS -> BaseItemKind.SERIES
++			else -> BaseItemKind.MOVIE
++		}
++
++		when {
++			definition.destination == BrowseModeDestination.GENRES ->
++				navigationRepository.navigate(Destinations.libraryByGenres(folder, itemType.serialName))
++
++			definition.destination == BrowseModeDestination.STUDIOS ->
++				navigationRepository.navigate(Destinations.libraryByStudio(folder, itemType.serialName))
++
++			definition.destination == BrowseModeDestination.DISCOVER ->
++				navigationRepository.navigate(Destinations.discover(folder, definition.mode.key))
++
++			definition.preset == null ->
++				navigationRepository.navigate(Destinations.libraryBrowser(folder))
++
++			else -> lifecycleScope.launch {
++				// Each mode keeps its own display preferences so that changing the sort inside a
++				// mode does not disturb the sort chosen for the plain library view.
++				val scoped = folder.copyWithDisplayPreferencesId("${folder.id}-${definition.mode.key}")
++				// Reading the store fetches it from the server, so keep it off the main thread.
++				withContext(Dispatchers.IO) { seed(scoped.displayPreferencesId!!, definition.preset) }
++				navigationRepository.navigate(Destinations.libraryBrowser(scoped))
++			}
++		}
++	}
++
++	/**
++	 * Applies a mode's preset the first time it is opened. Later visits leave the store alone so
++	 * that any sort or filter the user picked inside the mode survives.
++	 */
++	private suspend fun seed(preferencesId: String, preset: BrowsePreset) {
++		val preferences = preferencesRepository.getLibraryPreferences(preferencesId)
++		if (preferences[LibraryPreferences.browseModeSeeded]) return
++
++		preferences[LibraryPreferences.browseModeSeeded] = true
++		preset.sortBy?.let { preferences[LibraryPreferences.sortBy] = it }
++		preset.sortOrder?.let { preferences[LibraryPreferences.sortOrder] = it }
++		preferences[LibraryPreferences.filterUnwatchedOnly] = preset.unwatchedOnly
++		preferences[LibraryPreferences.filterFavoritesOnly] = preset.favoritesOnly
++		preferences.commit()
++	}
++}
+diff --git a/app/src/main/java/org/jellyfin/androidtv/ui/browsing/browsemodes/ByStudioFragment.kt b/app/src/main/java/org/jellyfin/androidtv/ui/browsing/browsemodes/ByStudioFragment.kt
+new file mode 100644
+index 0000000..9623d62
+--- /dev/null
++++ b/app/src/main/java/org/jellyfin/androidtv/ui/browsing/browsemodes/ByStudioFragment.kt
+@@ -0,0 +1,92 @@
++package org.jellyfin.androidtv.ui.browsing.browsemodes
++
++import android.os.Bundle
++import androidx.leanback.app.VerticalGridSupportFragment
++import androidx.leanback.widget.OnItemViewClickedListener
++import androidx.leanback.widget.VerticalGridPresenter
++import androidx.lifecycle.lifecycleScope
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.launch
++import kotlinx.coroutines.withContext
++import kotlinx.serialization.json.Json
++import org.jellyfin.androidtv.constant.Extras
++import org.jellyfin.androidtv.ui.itemhandling.BaseItemDtoBaseRowItem
++import org.jellyfin.androidtv.ui.navigation.Destinations
++import org.jellyfin.androidtv.ui.navigation.NavigationRepository
++import org.jellyfin.androidtv.ui.presentation.CardPresenter
++import org.jellyfin.androidtv.ui.presentation.MutableObjectAdapter
++import org.jellyfin.sdk.api.client.ApiClient
++import org.jellyfin.sdk.api.client.extensions.studiosApi
++import org.jellyfin.sdk.model.api.BaseItemDto
++import org.jellyfin.sdk.model.api.BaseItemKind
++import org.jellyfin.sdk.model.api.request.GetStudiosRequest
++import org.koin.android.ext.android.inject
++import timber.log.Timber
++
++/**
++ * The studios of a library, as a grid to pick from.
++ *
++ * Deliberately not modelled on [org.jellyfin.androidtv.ui.browsing.ByGenreFragment], which builds
++ * one row per value and retrieves them all up front. A library holds an order of magnitude more
++ * studios than genres — a sample library of 56 films carries 209 — so that shape would fire
++ * hundreds of requests at once on opening the screen.
++ */
++class ByStudioFragment : VerticalGridSupportFragment() {
++	private companion object {
++		const val COLUMNS = 6
++		const val CARD_HEIGHT = 200
++	}
++
++	private val apiClient by inject<ApiClient>()
++	private val navigationRepository by inject<NavigationRepository>()
++
++	private lateinit var folder: BaseItemDto
++	private lateinit var studiosAdapter: MutableObjectAdapter<Any>
++
++	override fun onCreate(savedInstanceState: Bundle?) {
++		super.onCreate(savedInstanceState)
++
++		folder = Json.decodeFromString<BaseItemDto>(requireArguments().getString(Extras.Folder)!!)
++		val includeType = requireArguments().getString(Extras.IncludeType)
++
++		title = folder.name
++
++		setGridPresenter(VerticalGridPresenter().apply { numberOfColumns = COLUMNS })
++
++		studiosAdapter = MutableObjectAdapter(CardPresenter(true, CARD_HEIGHT))
++		adapter = studiosAdapter
++
++		onItemViewClickedListener = OnItemViewClickedListener { _, item, _, _ ->
++			val studio = (item as? BaseItemDtoBaseRowItem)?.baseItem ?: return@OnItemViewClickedListener
++			navigationRepository.navigate(
++				Destinations.libraryByStudioItems(folder, studio.name.orEmpty())
++			)
++		}
++
++		load(includeType)
++	}
++
++	private fun load(includeType: String?) = lifecycleScope.launch {
++		val studios = try {
++			withContext(Dispatchers.IO) {
++				apiClient.studiosApi.getStudios(
++					GetStudiosRequest(
++						parentId = folder.id,
++						includeItemTypes = includeType?.let(BaseItemKind::fromNameOrNull)?.let(::setOf),
++					)
++				).content.items
++			}
++		} catch (error: Exception) {
++			Timber.e(error, "Unable to load studios for %s", folder.name)
++			emptyList()
++		}
++
++		if (!isAdded) return@launch
++
++		// The endpoint offers no sort option, so order by name here.
++		studios
++			.filter { !it.name.isNullOrBlank() }
++			.sortedBy { it.name }
++			.forEach { studiosAdapter.add(BaseItemDtoBaseRowItem(it)) }
++	}
++}
+diff --git a/app/src/main/java/org/jellyfin/androidtv/ui/browsing/browsemodes/DiscoverCardPresenter.kt b/app/src/main/java/org/jellyfin/androidtv/ui/browsing/browsemodes/DiscoverCardPresenter.kt
+new file mode 100644
+index 0000000..a2203dc
+--- /dev/null
++++ b/app/src/main/java/org/jellyfin/androidtv/ui/browsing/browsemodes/DiscoverCardPresenter.kt
+@@ -0,0 +1,23 @@
++package org.jellyfin.androidtv.ui.browsing.browsemodes
++
++import androidx.leanback.widget.Presenter
++import org.jellyfin.androidtv.ui.card.LegacyImageCardView
++import org.jellyfin.androidtv.ui.itemhandling.BaseItemDtoBaseRowItem
++import org.jellyfin.androidtv.ui.presentation.CardPresenter
++
++/**
++ * Cards for a Discover list, badged with their position in it.
++ *
++ * The server writes each item's place in the TMDB ranking into `IndexNumber`, which is otherwise
++ * unused for the movies and series these lists hold.
++ */
++class DiscoverCardPresenter(
++	staticHeight: Int,
++) : CardPresenter(true, staticHeight) {
++	override fun onBindViewHolder(viewHolder: Presenter.ViewHolder, item: Any?) {
++		super.onBindViewHolder(viewHolder, item)
++
++		val rank = (item as? BaseItemDtoBaseRowItem)?.baseItem?.indexNumber ?: return
++		(viewHolder.view as? LegacyImageCardView)?.setRankBadge(rank)
++	}
++}
+diff --git a/app/src/main/java/org/jellyfin/androidtv/ui/browsing/browsemodes/DiscoverFragment.kt b/app/src/main/java/org/jellyfin/androidtv/ui/browsing/browsemodes/DiscoverFragment.kt
+new file mode 100644
+index 0000000..1f456b1
+--- /dev/null
++++ b/app/src/main/java/org/jellyfin/androidtv/ui/browsing/browsemodes/DiscoverFragment.kt
+@@ -0,0 +1,109 @@
++package org.jellyfin.androidtv.ui.browsing.browsemodes
++
++import android.os.Bundle
++import androidx.leanback.app.VerticalGridSupportFragment
++import androidx.leanback.widget.OnItemViewClickedListener
++import androidx.leanback.widget.VerticalGridPresenter
++import androidx.lifecycle.lifecycleScope
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.launch
++import kotlinx.coroutines.withContext
++import kotlinx.serialization.json.Json
++import org.jellyfin.androidtv.R
++import org.jellyfin.androidtv.auth.repository.UserRepository
++import org.jellyfin.androidtv.constant.Extras
++import org.jellyfin.androidtv.data.repository.ItemRepository
++import org.jellyfin.androidtv.ui.itemhandling.BaseItemDtoBaseRowItem
++import org.jellyfin.androidtv.ui.itemhandling.BaseRowItem
++import org.jellyfin.androidtv.ui.itemhandling.ItemLauncher
++import org.jellyfin.androidtv.ui.presentation.MutableObjectAdapter
++import org.jellyfin.sdk.api.client.ApiClient
++import org.jellyfin.sdk.api.client.extensions.get
++import org.jellyfin.sdk.model.api.BaseItemDto
++import org.jellyfin.sdk.model.api.BaseItemDtoQueryResult
++import org.jellyfin.sdk.model.api.CollectionType
++import org.koin.android.ext.android.inject
++import timber.log.Timber
++
++/**
++ * The items of a Discover list, in the order the server ranked them.
++ *
++ * These lists come from a custom server addition rather than the generated SDK, so they are
++ * fetched as a raw request. The server matches TMDB's ranking against what the library owns, so
++ * the result is short and already ordered — no paging.
++ */
++class DiscoverFragment : VerticalGridSupportFragment() {
++	private companion object {
++		const val COLUMNS = 6
++		const val CARD_HEIGHT = 260
++		const val LIMIT = 60
++	}
++
++	private val apiClient by inject<ApiClient>()
++	private val itemLauncher by inject<ItemLauncher>()
++	private val userRepository by inject<UserRepository>()
++
++	private lateinit var folder: BaseItemDto
++	private lateinit var itemsAdapter: MutableObjectAdapter<Any>
++
++	override fun onCreate(savedInstanceState: Bundle?) {
++		super.onCreate(savedInstanceState)
++
++		folder = Json.decodeFromString<BaseItemDto>(requireArguments().getString(Extras.Folder)!!)
++		val mode = BrowseMode.entries.first { it.key == requireArguments().getString(Extras.BrowseMode) }
++
++		val label = getBrowseModes(folder.collectionType)?.first { it.mode == mode }?.label
++		title = label?.let { "${folder.name} - ${getString(it)}" } ?: folder.name
++
++		setGridPresenter(VerticalGridPresenter().apply { numberOfColumns = COLUMNS })
++
++		itemsAdapter = MutableObjectAdapter(DiscoverCardPresenter(CARD_HEIGHT))
++		adapter = itemsAdapter
++
++		onItemViewClickedListener = OnItemViewClickedListener { _, item, _, _ ->
++			if (item is BaseRowItem) itemLauncher.launch(item, itemsAdapter, requireContext())
++		}
++
++		load(mode)
++	}
++
++	private fun load(mode: BrowseMode) = lifecycleScope.launch {
++		val path = discoverPath(mode, folder.collectionType)
++		val items = try {
++			withContext(Dispatchers.IO) {
++				apiClient.get<BaseItemDtoQueryResult>(
++					pathTemplate = path,
++					queryParameters = mapOf(
++						"userId" to userRepository.currentUser.value?.id,
++						"parentId" to folder.id,
++						"fields" to ItemRepository.itemFields.joinToString(",") { it.serialName },
++						"limit" to LIMIT,
++					),
++				).content.items
++			}
++		} catch (error: Exception) {
++			Timber.e(error, "Unable to load discover list %s", path)
++			emptyList()
++		}
++
++		if (!isAdded) return@launch
++
++		items.forEach { itemsAdapter.add(BaseItemDtoBaseRowItem(it)) }
++
++		if (items.isEmpty()) {
++			title = getString(
++				when (mode) {
++					BrowseMode.TRENDING -> R.string.lbl_no_trending_items
++					else -> R.string.lbl_no_top_rated_items
++				}
++			)
++		}
++	}
++
++	private fun discoverPath(mode: BrowseMode, collectionType: CollectionType?): String {
++		val kind = if (collectionType == CollectionType.TVSHOWS) "Shows" else "Movies"
++		val list = if (mode == BrowseMode.TRENDING) "Trending" else "TopRated"
++
++		return "/Discover/$list/$kind"
++	}
++}
+diff --git a/app/src/main/java/org/jellyfin/androidtv/ui/browsing/browsemodes/StudioItemsFragment.kt b/app/src/main/java/org/jellyfin/androidtv/ui/browsing/browsemodes/StudioItemsFragment.kt
+new file mode 100644
+index 0000000..f4b2859
+--- /dev/null
++++ b/app/src/main/java/org/jellyfin/androidtv/ui/browsing/browsemodes/StudioItemsFragment.kt
+@@ -0,0 +1,90 @@
++package org.jellyfin.androidtv.ui.browsing.browsemodes
++
++import android.os.Bundle
++import androidx.leanback.app.VerticalGridSupportFragment
++import androidx.leanback.widget.OnItemViewClickedListener
++import androidx.leanback.widget.VerticalGridPresenter
++import androidx.lifecycle.lifecycleScope
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.launch
++import kotlinx.coroutines.withContext
++import kotlinx.serialization.json.Json
++import org.jellyfin.androidtv.constant.Extras
++import org.jellyfin.androidtv.data.repository.ItemRepository
++import org.jellyfin.androidtv.ui.itemhandling.BaseItemDtoBaseRowItem
++import org.jellyfin.androidtv.ui.itemhandling.BaseRowItem
++import org.jellyfin.androidtv.ui.itemhandling.ItemLauncher
++import org.jellyfin.androidtv.ui.presentation.CardPresenter
++import org.jellyfin.androidtv.ui.presentation.MutableObjectAdapter
++import org.jellyfin.sdk.api.client.ApiClient
++import org.jellyfin.sdk.api.client.extensions.itemsApi
++import org.jellyfin.sdk.model.api.BaseItemDto
++import org.jellyfin.sdk.model.api.BaseItemKind
++import org.jellyfin.sdk.model.api.CollectionType
++import org.jellyfin.sdk.model.api.ItemSortBy
++import org.jellyfin.sdk.model.api.request.GetItemsRequest
++import org.koin.android.ext.android.inject
++import timber.log.Timber
++
++/** The items a single studio is credited on, within one library. */
++class StudioItemsFragment : VerticalGridSupportFragment() {
++	private companion object {
++		const val COLUMNS = 6
++		const val CARD_HEIGHT = 260
++	}
++
++	private val apiClient by inject<ApiClient>()
++	private val itemLauncher by inject<ItemLauncher>()
++
++	private lateinit var folder: BaseItemDto
++	private lateinit var itemsAdapter: MutableObjectAdapter<Any>
++
++	override fun onCreate(savedInstanceState: Bundle?) {
++		super.onCreate(savedInstanceState)
++
++		folder = Json.decodeFromString<BaseItemDto>(requireArguments().getString(Extras.Folder)!!)
++		val studio = requireArguments().getString(Extras.Studio).orEmpty()
++
++		title = studio
++
++		setGridPresenter(VerticalGridPresenter().apply { numberOfColumns = COLUMNS })
++
++		itemsAdapter = MutableObjectAdapter(CardPresenter(true, CARD_HEIGHT))
++		adapter = itemsAdapter
++
++		onItemViewClickedListener = OnItemViewClickedListener { _, item, _, _ ->
++			if (item is BaseRowItem) itemLauncher.launch(item, itemsAdapter, requireContext())
++		}
++
++		load(studio)
++	}
++
++	private fun load(studio: String) = lifecycleScope.launch {
++		val itemType = when (folder.collectionType) {
++			CollectionType.TVSHOWS -> BaseItemKind.SERIES
++			else -> BaseItemKind.MOVIE
++		}
++
++		val items = try {
++			withContext(Dispatchers.IO) {
++				apiClient.itemsApi.getItems(
++					GetItemsRequest(
++						parentId = folder.id,
++						includeItemTypes = setOf(itemType),
++						studios = setOf(studio),
++						sortBy = setOf(ItemSortBy.SORT_NAME),
++						recursive = true,
++						fields = ItemRepository.itemFields,
++					)
++				).content.items
++			}
++		} catch (error: Exception) {
++			Timber.e(error, "Unable to load items for studio %s", studio)
++			emptyList()
++		}
++
++		if (!isAdded) return@launch
++
++		items.forEach { itemsAdapter.add(BaseItemDtoBaseRowItem(it)) }
++	}
++}
+diff --git a/app/src/main/java/org/jellyfin/androidtv/ui/card/LegacyImageCardView.java b/app/src/main/java/org/jellyfin/androidtv/ui/card/LegacyImageCardView.java
+index 2db9fa0..328baac 100644
+--- a/app/src/main/java/org/jellyfin/androidtv/ui/card/LegacyImageCardView.java
++++ b/app/src/main/java/org/jellyfin/androidtv/ui/card/LegacyImageCardView.java
+@@ -231,6 +231,18 @@ public class LegacyImageCardView extends BaseCardView {
+         }
+     }
+ 
++    /**
++     * Shows the item's position in a server-ranked list. A rank of zero or less hides the badge.
++     */
++    public void setRankBadge(int rank) {
++        if (rank > 0) {
++            binding.rankNumber.setText(nf.format(rank));
++            binding.rankIndicator.setVisibility(VISIBLE);
++        } else {
++            binding.rankIndicator.setVisibility(GONE);
++        }
++    }
++
+     public void setUnwatchedCount(int count) {
+         if (count > 0) {
+             binding.unwatchedCount.setText(count > 99 ? getContext().getString(R.string.watch_count_overflow) : nf.format(count));
+diff --git a/app/src/main/java/org/jellyfin/androidtv/ui/itemhandling/ItemLauncher.java b/app/src/main/java/org/jellyfin/androidtv/ui/itemhandling/ItemLauncher.java
+index ade3aa7..45b4628 100644
+--- a/app/src/main/java/org/jellyfin/androidtv/ui/itemhandling/ItemLauncher.java
++++ b/app/src/main/java/org/jellyfin/androidtv/ui/itemhandling/ItemLauncher.java
+@@ -54,9 +54,13 @@ public class ItemLauncher {
+             case MOVIES:
+             case TVSHOWS:
+                 LibraryPreferences displayPreferences = preferencesRepository.getValue().getLibraryPreferences(baseItem.getDisplayPreferencesId());
++                boolean enableBrowseModes = displayPreferences.get(LibraryPreferences.Companion.getEnableBrowseModes());
+                 boolean enableSmartScreen = displayPreferences.get(LibraryPreferences.Companion.getEnableSmartScreen());
+ 
+-                if (!enableSmartScreen) return Destinations.INSTANCE.libraryBrowser(baseItem);
++                // Opening a library offers the ways of browsing it first, unless the user has
++                // turned that off in the library's display preferences.
++                if (enableBrowseModes) return Destinations.INSTANCE.browseModes(baseItem);
++                else if (!enableSmartScreen) return Destinations.INSTANCE.libraryBrowser(baseItem);
+                 else return Destinations.INSTANCE.librarySmartScreen(baseItem);
+             case MUSIC:
+             case LIVETV:
+diff --git a/app/src/main/java/org/jellyfin/androidtv/ui/navigation/Destinations.kt b/app/src/main/java/org/jellyfin/androidtv/ui/navigation/Destinations.kt
+index 767e3eb..8c332ed 100644
+--- a/app/src/main/java/org/jellyfin/androidtv/ui/navigation/Destinations.kt
++++ b/app/src/main/java/org/jellyfin/androidtv/ui/navigation/Destinations.kt
+@@ -11,6 +11,10 @@ import org.jellyfin.androidtv.ui.browsing.ByLetterFragment
+ import org.jellyfin.androidtv.ui.browsing.CollectionFragment
+ import org.jellyfin.androidtv.ui.browsing.GenericFolderFragment
+ import org.jellyfin.androidtv.ui.browsing.SuggestedMoviesFragment
++import org.jellyfin.androidtv.ui.browsing.browsemodes.BrowseModesFragment
++import org.jellyfin.androidtv.ui.browsing.browsemodes.ByStudioFragment
++import org.jellyfin.androidtv.ui.browsing.browsemodes.DiscoverFragment
++import org.jellyfin.androidtv.ui.browsing.browsemodes.StudioItemsFragment
+ import org.jellyfin.androidtv.ui.home.HomeFragment
+ import org.jellyfin.androidtv.ui.itemdetail.FullDetailsFragment
+ import org.jellyfin.androidtv.ui.itemdetail.ItemListFragment
+@@ -55,6 +59,31 @@ object Destinations {
+ 		Extras.Folder to Json.Default.encodeToString(item),
+ 	)
+ 
++	// TODO only pass item id instead of complete JSON to browsing destinations
++	fun browseModes(item: BaseItemDto) = fragmentDestination<BrowseModesFragment>(
++		Extras.Folder to Json.Default.encodeToString(item),
++	)
++
++	// TODO only pass item id instead of complete JSON to browsing destinations
++	fun discover(item: BaseItemDto, browseMode: String) = fragmentDestination<DiscoverFragment>(
++		Extras.Folder to Json.Default.encodeToString(item),
++		Extras.BrowseMode to browseMode,
++	)
++
++	// TODO only pass item id instead of complete JSON to browsing destinations
++	fun libraryByStudio(item: BaseItemDto, includeType: String) =
++		fragmentDestination<ByStudioFragment>(
++			Extras.Folder to Json.Default.encodeToString(item),
++			Extras.IncludeType to includeType,
++		)
++
++	// TODO only pass item id instead of complete JSON to browsing destinations
++	fun libraryByStudioItems(item: BaseItemDto, studio: String) =
++		fragmentDestination<StudioItemsFragment>(
++			Extras.Folder to Json.Default.encodeToString(item),
++			Extras.Studio to studio,
++		)
++
+ 	// TODO only pass item id instead of complete JSON to browsing destinations
+ 	fun collectionBrowser(item: BaseItemDto) = fragmentDestination<CollectionFragment>(
+ 		Extras.Folder to Json.Default.encodeToString(item),
+diff --git a/app/src/main/java/org/jellyfin/androidtv/ui/presentation/CardPresenter.java b/app/src/main/java/org/jellyfin/androidtv/ui/presentation/CardPresenter.java
+index 89a088f..f14bbdd 100644
+--- a/app/src/main/java/org/jellyfin/androidtv/ui/presentation/CardPresenter.java
++++ b/app/src/main/java/org/jellyfin/androidtv/ui/presentation/CardPresenter.java
+@@ -310,6 +310,7 @@ public class CardPresenter extends Presenter {
+ 
+         protected void resetCardView() {
+             mCardView.clearBanner();
++            mCardView.setRankBadge(0);
+             mCardView.setUnwatchedCount(-1);
+             mCardView.setProgress(0);
+             mCardView.setRating(null);
+diff --git a/app/src/main/res/drawable/ic_medal.xml b/app/src/main/res/drawable/ic_medal.xml
+new file mode 100644
+index 0000000..d91bf50
+--- /dev/null
++++ b/app/src/main/res/drawable/ic_medal.xml
+@@ -0,0 +1,10 @@
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="24dp"
++    android:height="24dp"
++    android:tint="#EECE55"
++    android:viewportWidth="24"
++    android:viewportHeight="24">
++    <path
++        android:fillColor="@android:color/white"
++        android:pathData="M17,10.43V2H7v8.43c0,0.35 0.18,0.68 0.49,0.86l4.18,2.51l-0.99,2.34l-3.41,0.29l2.59,2.24L9.07,22L12,20.23L14.93,22l-0.78,-3.33l2.59,-2.24l-3.41,-0.29l-0.99,-2.34l4.18,-2.51C16.82,11.11 17,10.79 17,10.43zM13,9.24l-1,0.6l-1,-0.6V3h2V9.24z" />
++</vector>
+diff --git a/app/src/main/res/drawable/ic_new_releases.xml b/app/src/main/res/drawable/ic_new_releases.xml
+new file mode 100644
+index 0000000..4e1873c
+--- /dev/null
++++ b/app/src/main/res/drawable/ic_new_releases.xml
+@@ -0,0 +1,10 @@
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="24dp"
++    android:height="24dp"
++    android:tint="#6FB3E0"
++    android:viewportWidth="24"
++    android:viewportHeight="24">
++    <path
++        android:fillColor="@android:color/white"
++        android:pathData="M23,12l-2.44,-2.79 0.34,-3.69 -3.61,-0.82 -1.89,-3.2L12,2.96 8.6,1.5 6.71,4.69 3.1,5.5l0.34,3.7L1,12l2.44,2.79 -0.34,3.7 3.61,0.82 1.89,3.2 3.4,-1.47 3.4,1.46 1.89,-3.19 3.61,-0.82 -0.34,-3.69L23,12zM10,17l-4,-4 1.41,-1.41L10,14.17l6.59,-6.59L18,9l-8,8z" />
++</vector>
+diff --git a/app/src/main/res/drawable/ic_trending_up.xml b/app/src/main/res/drawable/ic_trending_up.xml
+new file mode 100644
+index 0000000..128928b
+--- /dev/null
++++ b/app/src/main/res/drawable/ic_trending_up.xml
+@@ -0,0 +1,10 @@
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="24dp"
++    android:height="24dp"
++    android:tint="#5CD672"
++    android:viewportWidth="24"
++    android:viewportHeight="24">
++    <path
++        android:fillColor="@android:color/white"
++        android:pathData="M16,6l2.29,2.29 -4.88,4.88 -4,-4L2,16.59 3.41,18l6,-6 4,4 6.3,-6.29L22,12L22,6z" />
++</vector>
+diff --git a/app/src/main/res/layout/view_card_legacy_image.xml b/app/src/main/res/layout/view_card_legacy_image.xml
+index 9e68fc7..28f4b13 100644
+--- a/app/src/main/res/layout/view_card_legacy_image.xml
++++ b/app/src/main/res/layout/view_card_legacy_image.xml
+@@ -93,6 +93,36 @@
+                 android:visibility="visible" />
+         </FrameLayout>
+ 
++        <!-- Position within a server-ranked list, such as the Discover browse modes. -->
++        <FrameLayout
++            android:id="@+id/rankIndicator"
++            android:layout_width="wrap_content"
++            android:layout_height="wrap_content"
++            android:layout_alignStart="@id/main_image"
++            android:layout_marginTop="4dp"
++            android:layout_marginStart="4dp"
++            android:visibility="gone"
++            tools:visibility="visible">
++
++            <ImageView
++                android:layout_width="20dp"
++                android:layout_height="20dp"
++                android:contentDescription="@null"
++                android:src="@drawable/circle_accent"
++                tools:ignore="ImageContrastCheck" />
++
++            <TextView
++                android:id="@+id/rankNumber"
++                android:layout_width="match_parent"
++                android:layout_height="match_parent"
++                android:layout_gravity="center"
++                android:gravity="center"
++                android:textAlignment="center"
++                android:textSize="10sp"
++                tools:ignore="TextContrastCheck"
++                tools:text="1" />
++        </FrameLayout>
++
+         <FrameLayout
+             android:id="@+id/watchedIndicator"
+             android:layout_width="wrap_content"
+diff --git a/app/src/main/res/values/colors.xml b/app/src/main/res/values/colors.xml
+index 54b5432..4ac6593 100644
+--- a/app/src/main/res/values/colors.xml
++++ b/app/src/main/res/values/colors.xml
+@@ -65,4 +65,22 @@
+     <color name="lb_basic_card_info_bg_color">@color/grey</color>
+ 
+     <color name="background_filter">#94101010</color>
++
++    <!-- Browse mode tile icons. Tinted per tile so each is recognisable at a glance; applied at
++         draw time rather than in the drawables, which are shared with the rest of the app. -->
++    <color name="browse_mode_all">#B0BEC5</color>
++    <color name="browse_mode_unwatched">#A98BD6</color>
++    <color name="browse_mode_just_added">#4DD0C4</color>
++    <color name="browse_mode_best_unseen">#F2C14E</color>
++    <color name="browse_mode_random">#F08A5D</color>
++    <color name="browse_mode_favorites">#E5687A</color>
++    <color name="browse_mode_genres">#C07CD6</color>
++    <color name="browse_mode_studios">#8D9EC6</color>
++    <color name="browse_mode_networks">#5AC8E0</color>
++    <color name="browse_mode_recently_played">#86C98B</color>
++    <color name="browse_mode_longest">#B5895E</color>
++    <color name="browse_mode_highest_rated">#EECE55</color>
++    <color name="browse_mode_top_rated">#EECE55</color>
++    <color name="browse_mode_trending">#5CD672</color>
++    <color name="browse_mode_new_releases">#6FB3E0</color>
+ </resources>
+diff --git a/app/src/main/res/values/strings.xml b/app/src/main/res/values/strings.xml
+index 117ea54..07b77fe 100644
+--- a/app/src/main/res/values/strings.xml
++++ b/app/src/main/res/values/strings.xml
+@@ -590,4 +590,22 @@
+         <item quantity="one">%1$s album</item>
+         <item quantity="other">%1$s albums</item>
+     </plurals>
++
++    <!-- Browse modes -->
++    <string name="lbl_browse_by">Browse by</string>
++    <string name="lbl_browse_mode_best_unseen">Best Unseen</string>
++    <string name="lbl_browse_mode_critics_picks">Critics\' Picks</string>
++    <string name="lbl_browse_mode_highest_rated">Highest Rated</string>
++    <string name="lbl_browse_mode_just_added">Just Added</string>
++    <string name="lbl_browse_mode_longest">Longest</string>
++    <string name="lbl_browse_mode_new_releases">New Releases</string>
++    <string name="lbl_browse_mode_recently_played">Recently Played</string>
++    <string name="lbl_browse_mode_top_rated">Top Rated</string>
++    <string name="lbl_browse_mode_trending">Trending</string>
++    <string name="lbl_studios">Studios</string>
++    <string name="lbl_networks">Networks</string>
++    <string name="lbl_no_top_rated_items">None of the top rated titles are in this library.</string>
++    <string name="lbl_no_trending_items">No trending titles are currently in this library.</string>
++    <string name="pref_enable_browse_modes">Browse modes</string>
++    <string name="pref_enable_browse_modes_description">Offer ways to browse when opening this library instead of going straight to the item grid</string>
+ </resources>

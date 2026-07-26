@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Browse Modes</title>
+</head>
+<body>
+<div id="BrowseModesConfigPage" data-role="page" class="page type-interior pluginConfigurationPage">
+    <div data-role="content">
+        <div class="content-primary">
+            <form id="BrowseModesConfigForm">
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="TmdbApiKey">TMDb API key</label>
+                    <input id="TmdbApiKey" name="TmdbApiKey" type="text" is="emby-input" />
+                    <div class="fieldDescription">
+                        Required for the Trending and Top Rated browse modes. Keys are free from
+                        themoviedb.org. Every other browse mode works without one.
+                    </div>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="DiscoverPagesToScan">Pages to scan</label>
+                    <input id="DiscoverPagesToScan" name="DiscoverPagesToScan" type="number" min="1" max="50" step="1" is="emby-input" />
+                    <div class="fieldDescription">
+                        TMDb returns 20 titles per page and most will not be in your library, so a
+                        wide net is cast. Raising this finds more matches but makes more requests.
+                    </div>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="CacheDurationHours">Cache duration (hours)</label>
+                    <input id="CacheDurationHours" name="CacheDurationHours" type="number" min="1" max="168" step="1" is="emby-input" />
+                    <div class="fieldDescription">
+                        How long a built list is kept before it is fetched again.
+                    </div>
+                </div>
+
+                <div>
+                    <button is="emby-button" type="submit" class="raised button-submit block emby-button">
+                        <span>Save</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        (function () {
+            var pluginId = '0d5f6a1e-3b7c-4c62-9a4d-2e8f1b6c9a37';
+
+            document.querySelector('#BrowseModesConfigPage')
+                .addEventListener('pageshow', function () {
+                    Dashboard.showLoadingMsg();
+                    ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                        document.querySelector('#TmdbApiKey').value = config.TmdbApiKey || '';
+                        document.querySelector('#DiscoverPagesToScan').value = config.DiscoverPagesToScan || 15;
+                        document.querySelector('#CacheDurationHours').value = config.CacheDurationHours || 6;
+                        Dashboard.hideLoadingMsg();
+                    });
+                });
+
+            document.querySelector('#BrowseModesConfigForm')
+                .addEventListener('submit', function (e) {
+                    e.preventDefault();
+                    Dashboard.showLoadingMsg();
+                    ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                        config.TmdbApiKey = document.querySelector('#TmdbApiKey').value;
+                        config.DiscoverPagesToScan = parseInt(document.querySelector('#DiscoverPagesToScan').value, 10) || 15;
+                        config.CacheDurationHours = parseInt(document.querySelector('#CacheDurationHours').value, 10) || 6;
+                        ApiClient.updatePluginConfiguration(pluginId, config).then(function (result) {
+                            Dashboard.processPluginConfigurationUpdateResult(result);
+                        });
+                    });
+                    return false;
+                });
+        })();
+    </script>
+</div>
+</body>
+</html>

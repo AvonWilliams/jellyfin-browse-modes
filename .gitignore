@@ -1,0 +1,13 @@
+# Build output
+bin/
+obj/
+dist/
+*.user
+
+# Local toolchain / environment
+local.properties
+nuget.config
+
+# OS
+.DS_Store
+Thumbs.db

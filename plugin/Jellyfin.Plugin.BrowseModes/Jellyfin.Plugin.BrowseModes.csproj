@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>false</ImplicitUsings>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <RootNamespace>Jellyfin.Plugin.BrowseModes</RootNamespace>
+    <!-- A plugin is loaded from a folder, not via deps.json, so its third-party dependencies have
+         to sit next to it in the output. -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Only packages Jellyfin actually publishes to nuget.org. MediaBrowser.Providers and
+      Jellyfin.Api are deliberately absent: neither is packaged, and referencing the shipped DLLs
+      would load a second copy of TMDbLib into the plugin's AssemblyLoadContext, giving two
+      distinct type identities for TimeWindow and a MissingMethodException at runtime.
+    -->
+    <!--
+      ExcludeAssets=runtime on the Jellyfin packages: the server already has these loaded, and
+      shipping a second copy in the plugin folder would give the plugin's AssemblyLoadContext its
+      own type identities, so casts against server-provided objects would fail.
+    -->
+    <PackageReference Include="Jellyfin.Controller" Version="12.0.0-rc3" ExcludeAssets="runtime" />
+    <PackageReference Include="Jellyfin.Model" Version="12.0.0-rc3" ExcludeAssets="runtime" />
+    <PackageReference Include="Jellyfin.Data" Version="12.0.0-rc3" ExcludeAssets="runtime" />
+    <PackageReference Include="Jellyfin.Extensions" Version="12.0.0-rc3" ExcludeAssets="runtime" />
+
+    <!-- Not shipped by the server, so this one does need to travel with the plugin. -->
+    <PackageReference Include="TMDbLib" Version="3.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Configuration\config.html" />
+  </ItemGroup>
+
+</Project>

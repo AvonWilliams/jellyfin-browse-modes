@@ -1,0 +1,1038 @@
+diff --git a/src/apps/modern/features/libraries/components/ItemsView.tsx b/src/apps/modern/features/libraries/components/ItemsView.tsx
+index 5f3f5f8..921580a 100644
+--- a/src/apps/modern/features/libraries/components/ItemsView.tsx
++++ b/src/apps/modern/features/libraries/components/ItemsView.tsx
+@@ -126,6 +126,9 @@ const ItemsView: FC = () => {
+             cardOptions.showSeriesTimerChannel = true;
+             cardOptions.overlayMoreButton = true;
+             cardOptions.lines = 3;
++        } else if (viewType === LibraryTab.Trending || viewType === LibraryTab.TopRated) {
++            cardOptions.overlayPlayButton = true;
++            cardOptions.showRank = true;
+         } else if (viewType === LibraryTab.Movies) {
+             cardOptions.overlayPlayButton = true;
+         } else if (viewType === LibraryTab.Series || viewType === LibraryTab.Studios) {
+diff --git a/src/apps/modern/features/libraries/constants/browseModes.ts b/src/apps/modern/features/libraries/constants/browseModes.ts
+new file mode 100644
+index 0000000..ed863f4
+--- /dev/null
++++ b/src/apps/modern/features/libraries/constants/browseModes.ts
+@@ -0,0 +1,249 @@
++import { CollectionType } from '@jellyfin/sdk/lib/generated-client/models/collection-type';
++import { ItemFilter } from '@jellyfin/sdk/lib/generated-client/models/item-filter';
++import { ItemSortBy } from '@jellyfin/sdk/lib/generated-client/models/item-sort-by';
++import { SortOrder } from '@jellyfin/sdk/lib/generated-client/models/sort-order';
++import AccessTime from '@mui/icons-material/AccessTime';
++import Apps from '@mui/icons-material/Apps';
++import Business from '@mui/icons-material/Business';
++import CalendarMonth from '@mui/icons-material/CalendarMonth';
++import Category from '@mui/icons-material/Category';
++import FiberNew from '@mui/icons-material/FiberNew';
++import Favorite from '@mui/icons-material/Favorite';
++import FamilyRestroom from '@mui/icons-material/FamilyRestroom';
++import History from '@mui/icons-material/History';
++import NewReleases from '@mui/icons-material/NewReleases';
++import Shuffle from '@mui/icons-material/Shuffle';
++import MilitaryTech from '@mui/icons-material/MilitaryTech';
++import Star from '@mui/icons-material/Star';
++import Reviews from '@mui/icons-material/Reviews';
++import Recommend from '@mui/icons-material/Recommend';
++import VisibilityOff from '@mui/icons-material/VisibilityOff';
++import TrendingUp from '@mui/icons-material/TrendingUp';
++
++import { BrowseMode, type BrowseModeDefinition } from 'types/browseMode';
++import { LibraryTab } from 'types/libraryTab';
++
++const allMode: BrowseModeDefinition = {
++    mode: BrowseMode.All,
++    label: 'BrowseModeAll',
++    Icon: Apps,
++    iconColor: '#B0BEC5'
++};
++
++const genresMode: BrowseModeDefinition = {
++    mode: BrowseMode.Genres,
++    label: 'Genres',
++    Icon: Category,
++    iconColor: '#C07CD6',
++    view: LibraryTab.Genres
++};
++
++const justAddedMode: BrowseModeDefinition = {
++    mode: BrowseMode.JustAdded,
++    label: 'BrowseModeJustAdded',
++    Icon: FiberNew,
++    iconColor: '#4DD0C4',
++    settings: {
++        SortBy: ItemSortBy.DateCreated,
++        SortOrder: SortOrder.Descending
++    }
++};
++
++const newReleasesMode: BrowseModeDefinition = {
++    mode: BrowseMode.NewReleases,
++    label: 'BrowseModeNewReleases',
++    Icon: NewReleases,
++    iconColor: '#6FB3E0',
++    settings: {
++        SortBy: ItemSortBy.PremiereDate,
++        SortOrder: SortOrder.Descending
++    }
++};
++
++const randomMode: BrowseModeDefinition = {
++    mode: BrowseMode.Random,
++    label: 'OptionRandom',
++    Icon: Shuffle,
++    iconColor: '#F08A5D',
++    settings: {
++        SortBy: ItemSortBy.Random,
++        SortOrder: SortOrder.Ascending
++    }
++};
++
++const highestRatedMode: BrowseModeDefinition = {
++    mode: BrowseMode.HighestRated,
++    label: 'BrowseModeHighestRated',
++    Icon: Star,
++    iconColor: '#EECE55',
++    settings: {
++        SortBy: ItemSortBy.CommunityRating,
++        SortOrder: SortOrder.Descending
++    }
++};
++
++const decadesMode: BrowseModeDefinition = {
++    mode: BrowseMode.Decades,
++    label: 'BrowseModeDecades',
++    Icon: CalendarMonth,
++    iconColor: '#7E9CD8',
++    picker: { filter: 'Years' }
++};
++
++const trendingMode: BrowseModeDefinition = {
++    mode: BrowseMode.Trending,
++    label: 'BrowseModeTrending',
++    Icon: TrendingUp,
++    iconColor: '#5CD672',
++    view: LibraryTab.Trending
++};
++
++const studiosMode: BrowseModeDefinition = {
++    mode: BrowseMode.Studios,
++    label: 'Studios',
++    Icon: Business,
++    iconColor: '#8D9EC6',
++    view: LibraryTab.Studios
++};
++
++const networksMode: BrowseModeDefinition = {
++    ...studiosMode,
++    label: 'TabNetworks',
++    iconColor: '#5AC8E0'
++};
++
++const unwatchedMode: BrowseModeDefinition = {
++    mode: BrowseMode.Unwatched,
++    label: 'BrowseModeUnwatched',
++    Icon: VisibilityOff,
++    iconColor: '#A98BD6',
++    settings: {
++        Filters: { Status: [ItemFilter.IsUnplayed] }
++    }
++};
++
++const favoritesMode: BrowseModeDefinition = {
++    mode: BrowseMode.Favorites,
++    label: 'Favorites',
++    Icon: Favorite,
++    iconColor: '#E5687A',
++    view: LibraryTab.Favorites
++};
++
++const criticsPicksMode: BrowseModeDefinition = {
++    mode: BrowseMode.CriticsPicks,
++    label: 'BrowseModeCriticsPicks',
++    Icon: Reviews,
++    iconColor: '#E0533D',
++    settings: {
++        SortBy: ItemSortBy.CriticRating,
++        SortOrder: SortOrder.Descending
++    }
++};
++
++const recentlyPlayedMode: BrowseModeDefinition = {
++    mode: BrowseMode.RecentlyPlayed,
++    label: 'BrowseModeRecentlyPlayed',
++    Icon: History,
++    iconColor: '#86C98B',
++    settings: {
++        SortBy: ItemSortBy.DatePlayed,
++        SortOrder: SortOrder.Descending
++    }
++};
++
++const longestMode: BrowseModeDefinition = {
++    mode: BrowseMode.Longest,
++    label: 'BrowseModeLongest',
++    Icon: AccessTime,
++    iconColor: '#B5895E',
++    settings: {
++        SortBy: ItemSortBy.Runtime,
++        SortOrder: SortOrder.Descending
++    }
++};
++
++const ageRatingMode: BrowseModeDefinition = {
++    mode: BrowseMode.AgeRating,
++    label: 'BrowseModeAgeRating',
++    Icon: FamilyRestroom,
++    iconColor: '#9CCC65',
++    picker: { filter: 'OfficialRatings' }
++};
++
++const topRatedMode: BrowseModeDefinition = {
++    mode: BrowseMode.TopRated,
++    label: 'BrowseModeTopRated',
++    Icon: MilitaryTech,
++    iconColor: '#EECE55',
++    view: LibraryTab.TopRated
++};
++
++// The best thing you own but have not got to yet.
++const bestUnseenMode: BrowseModeDefinition = {
++    mode: BrowseMode.BestUnseen,
++    label: 'BrowseModeBestUnseen',
++    Icon: Recommend,
++    iconColor: '#F2C14E',
++    settings: {
++        Filters: { Status: [ItemFilter.IsUnplayed] },
++        SortBy: ItemSortBy.CommunityRating,
++        SortOrder: SortOrder.Descending
++    }
++};
++
++const movieBrowseModes: BrowseModeDefinition[] = [
++    allMode,
++    unwatchedMode,
++    justAddedMode,
++    bestUnseenMode,
++    randomMode,
++    favoritesMode,
++    genresMode,
++    highestRatedMode,
++    topRatedMode,
++    trendingMode,
++    newReleasesMode,
++    decadesMode,
++    studiosMode,
++    recentlyPlayedMode,
++    ageRatingMode,
++    criticsPicksMode,
++    longestMode
++];
++
++const tvBrowseModes: BrowseModeDefinition[] = [
++    allMode,
++    unwatchedMode,
++    justAddedMode,
++    bestUnseenMode,
++    randomMode,
++    favoritesMode,
++    genresMode,
++    highestRatedMode,
++    topRatedMode,
++    trendingMode,
++    newReleasesMode,
++    decadesMode,
++    networksMode,
++    recentlyPlayedMode,
++    ageRatingMode,
++    longestMode
++];
++
++/**
++ * The browse modes offered for each library type. A library type absent from this map keeps
++ * the stock behaviour of opening straight into its default view.
++ */
++export const BrowseModesByCollectionType: Partial<Record<CollectionType, BrowseModeDefinition[]>> = {
++    [CollectionType.Movies]: movieBrowseModes,
++    [CollectionType.Tvshows]: tvBrowseModes
++};
++
++export const getBrowseModes = (collectionType?: CollectionType | null) => (
++    collectionType ? BrowseModesByCollectionType[collectionType] : undefined
++);
++
++export const getBrowseMode = (collectionType: CollectionType | null | undefined, mode: string | null) => (
++    mode ? getBrowseModes(collectionType)?.find(definition => definition.mode === mode) : undefined
++);
+diff --git a/src/apps/modern/features/libraries/constants/libraryRoutes.ts b/src/apps/modern/features/libraries/constants/libraryRoutes.ts
+index 392d607..3342163 100644
+--- a/src/apps/modern/features/libraries/constants/libraryRoutes.ts
++++ b/src/apps/modern/features/libraries/constants/libraryRoutes.ts
+@@ -145,6 +145,16 @@ export const LibraryRoutes: LibraryRoute[] = [
+                 index: 6,
+                 label: 'Playlists',
+                 view: LibraryTab.Playlists
++            },
++            {
++                index: 7,
++                label: 'BrowseModeTrending',
++                view: LibraryTab.Trending
++            },
++            {
++                index: 8,
++                label: 'BrowseModeTopRated',
++                view: LibraryTab.TopRated
+             }
+         ]
+     },
+@@ -239,6 +249,16 @@ export const LibraryRoutes: LibraryRoute[] = [
+                 index: 7,
+                 label: 'Playlists',
+                 view: LibraryTab.Playlists
++            },
++            {
++                index: 8,
++                label: 'BrowseModeTrending',
++                view: LibraryTab.Trending
++            },
++            {
++                index: 9,
++                label: 'BrowseModeTopRated',
++                view: LibraryTab.TopRated
+             }
+         ]
+     },
+diff --git a/src/apps/modern/features/libraries/constants/views/movies.ts b/src/apps/modern/features/libraries/constants/views/movies.ts
+index 9505849..252ee59 100644
+--- a/src/apps/modern/features/libraries/constants/views/movies.ts
++++ b/src/apps/modern/features/libraries/constants/views/movies.ts
+@@ -61,6 +61,30 @@ const studiosTabContent: LibraryTabContent = {
+     isBtnSortEnabled: false
+ };
+ 
++const topRatedTabContent: LibraryTabContent = {
++    viewType: LibraryTab.TopRated,
++    collectionType: CollectionType.Movies,
++    itemType: [BaseItemKind.Movie],
++    // Ordering comes from TMDb, and the result set is whatever the library happens to own.
++    isBtnSortEnabled: false,
++    isBtnFilterEnabled: false,
++    isAlphabetPickerEnabled: false,
++    isPaginationEnabled: false,
++    noItemsMessage: 'MessageNoTopRatedItems'
++};
++
++const trendingTabContent: LibraryTabContent = {
++    viewType: LibraryTab.Trending,
++    collectionType: CollectionType.Movies,
++    itemType: [BaseItemKind.Movie],
++    // Ordering comes from TMDb, and the result set is whatever the library happens to own.
++    isBtnSortEnabled: false,
++    isBtnFilterEnabled: false,
++    isAlphabetPickerEnabled: false,
++    isPaginationEnabled: false,
++    noItemsMessage: 'MessageNoTrendingItems'
++};
++
+ const moviesViews: Record<number, LibraryTabContent> = {
+     0: moviesTabContent,
+     1: suggestionsTabContent,
+@@ -68,7 +92,9 @@ const moviesViews: Record<number, LibraryTabContent> = {
+     3: collectionsTabContent,
+     4: genresTabContent,
+     5: studiosTabContent,
+-    6: playlistsTabContent
++    6: playlistsTabContent,
++    7: trendingTabContent,
++    8: topRatedTabContent
+ };
+ 
+ export default moviesViews;
+diff --git a/src/apps/modern/features/libraries/constants/views/tvshows.ts b/src/apps/modern/features/libraries/constants/views/tvshows.ts
+index 63161be..7044dba 100644
+--- a/src/apps/modern/features/libraries/constants/views/tvshows.ts
++++ b/src/apps/modern/features/libraries/constants/views/tvshows.ts
+@@ -69,6 +69,30 @@ const playlistsTabContent: LibraryTabContent = {
+     itemType: [BaseItemKind.Playlist]
+ };
+ 
++const topRatedTabContent: LibraryTabContent = {
++    viewType: LibraryTab.TopRated,
++    collectionType: CollectionType.Tvshows,
++    itemType: [BaseItemKind.Series],
++    // Ordering comes from TMDb, and the result set is whatever the library happens to own.
++    isBtnSortEnabled: false,
++    isBtnFilterEnabled: false,
++    isAlphabetPickerEnabled: false,
++    isPaginationEnabled: false,
++    noItemsMessage: 'MessageNoTopRatedItems'
++};
++
++const trendingTabContent: LibraryTabContent = {
++    viewType: LibraryTab.Trending,
++    collectionType: CollectionType.Tvshows,
++    itemType: [BaseItemKind.Series],
++    // Ordering comes from TMDb, and the result set is whatever the library happens to own.
++    isBtnSortEnabled: false,
++    isBtnFilterEnabled: false,
++    isAlphabetPickerEnabled: false,
++    isPaginationEnabled: false,
++    noItemsMessage: 'MessageNoTrendingItems'
++};
++
+ const tvShowsViews: Record<number, LibraryTabContent> = {
+     0: seriesTabContent,
+     1: suggestionsTabContent,
+@@ -77,7 +101,9 @@ const tvShowsViews: Record<number, LibraryTabContent> = {
+     4: studiosTabContent,
+     5: episodesTabContent,
+     6: collectionsTabContent,
+-    7: playlistsTabContent
++    7: playlistsTabContent,
++    8: trendingTabContent,
++    9: topRatedTabContent
+ };
+ 
+ export default tvShowsViews;
+diff --git a/src/apps/modern/features/libraries/hooks/useLibrary.tsx b/src/apps/modern/features/libraries/hooks/useLibrary.tsx
+index 530519b..a396f49 100644
+--- a/src/apps/modern/features/libraries/hooks/useLibrary.tsx
++++ b/src/apps/modern/features/libraries/hooks/useLibrary.tsx
+@@ -11,6 +11,7 @@ import { LibraryViewSettings } from 'types/library';
+ import { LibraryTab } from 'types/libraryTab';
+ import { LibraryTabContent } from 'types/libraryTabContent';
+ 
++import { getBrowseMode } from '../constants/browseModes';
+ import { LibraryRoutes } from '../constants/libraryRoutes';
+ import { isLibraryPath } from '../utils/path';
+ import { getDefaultLibraryViewSettings, getSettingsKey } from '../utils/settings';
+@@ -35,7 +36,7 @@ export const useLibrary = () => useContext(LibraryContext);
+ 
+ export const LibraryProvider: FC<PropsWithChildren<unknown>> = ({ children }) => {
+     const { pathname } = useLocation();
+-    const { libraryId, activeTab } = useCurrentTab();
++    const { searchParams, libraryId, activeTab } = useCurrentTab();
+ 
+     const route = useMemo(() => LibraryRoutes.find(({ path }) => path === pathname), [pathname]);
+     const collectionType = route?.type;
+@@ -45,11 +46,40 @@ export const LibraryProvider: FC<PropsWithChildren<unknown>> = ({ children }) =>
+     const content = useMemo(() => collectionType && getViewContent(collectionType, activeTab), [collectionType, activeTab]);
+     const viewType = content?.viewType;
+ 
++    // A browse mode seeds the sort and filters for the view it opens. Picker modes additionally
++    // carry the chosen value, so each choice is treated as a distinct mode of its own.
++    const browseMode = searchParams.get('browseMode');
++    const browsePick = searchParams.get('pick');
++    const browseModeSettings = useMemo(() => {
++        const definition = getBrowseMode(collectionType, browseMode);
++        if (!definition) {
++            return undefined;
++        }
++
++        if (!definition.picker || !browsePick) {
++            return definition.settings;
++        }
++
++        const values = browsePick.split(',');
++        const filterValue = definition.picker.filter === 'Years' ?
++            values.map(value => parseInt(value, 10)).filter(value => !isNaN(value)) :
++            values;
++
++        return {
++            ...definition.settings,
++            Filters: {
++                ...definition.settings?.Filters,
++                [definition.picker.filter]: filterValue
++            }
++        };
++    }, [collectionType, browseMode, browsePick]);
++    const browseModeKey = browseMode && browsePick ? `${browseMode}-${browsePick}` : browseMode;
++
+     // Local storage requires the view type to be known upfront so default to movies if unknown
+     const settingsViewType = viewType ?? LibraryTab.Movies;
+     const [viewSettings, setViewSettings] = useLocalStorage<LibraryViewSettings>(
+-        getSettingsKey(settingsViewType, libraryId),
+-        getDefaultLibraryViewSettings(settingsViewType)
++        getSettingsKey(settingsViewType, libraryId, browseModeKey),
++        getDefaultLibraryViewSettings(settingsViewType, browseModeSettings)
+     );
+ 
+     const itemsResult = useGetItemsViewByType(
+diff --git a/src/apps/modern/features/libraries/utils/path.ts b/src/apps/modern/features/libraries/utils/path.ts
+index 5a632ee..fcee99c 100644
+--- a/src/apps/modern/features/libraries/utils/path.ts
++++ b/src/apps/modern/features/libraries/utils/path.ts
+@@ -1,5 +1,9 @@
++import type { CollectionType } from '@jellyfin/sdk/lib/generated-client/models/collection-type';
++
++import layoutManager from 'components/layoutManager';
+ import * as userSettings from 'scripts/settings/userSettings';
+ 
++import { getBrowseModes } from '../constants/browseModes';
+ import { LibraryRoutes } from '../constants/libraryRoutes';
+ 
+ /**
+@@ -16,6 +20,17 @@ export const isLibraryPath = (path: string) => (
+     LibraryRoutes.some(route => route.path === path)
+ );
+ 
++/**
++ * Utility function to check whether opening a library should offer the browse modes rather than
++ * going straight into a library view. A landing view the user has explicitly chosen always wins,
++ * which is what keeps the old behaviour reachable.
++ */
++export const shouldShowBrowseModes = (collectionType?: CollectionType | null, libraryId?: string | null) => (
++    layoutManager.modern
++    && !!getBrowseModes(collectionType)?.length
++    && !userSettings.get('landing-' + libraryId, false)
++);
++
+ /**
+  * Utility function to get the default view index for a specified URL path and library.
+  */
+diff --git a/src/apps/modern/features/libraries/utils/settings.ts b/src/apps/modern/features/libraries/utils/settings.ts
+index 79eae16..fe98eb2 100644
+--- a/src/apps/modern/features/libraries/utils/settings.ts
++++ b/src/apps/modern/features/libraries/utils/settings.ts
+@@ -14,7 +14,10 @@ export const getDefaultSortBy = (viewType: LibraryTab) => {
+     return ItemSortBy.SortName;
+ };
+ 
+-export const getDefaultLibraryViewSettings = (viewType: LibraryTab): LibraryViewSettings => {
++export const getDefaultLibraryViewSettings = (
++    viewType: LibraryTab,
++    browseModeSettings?: Partial<LibraryViewSettings>
++): LibraryViewSettings => {
+     return {
+         ShowTitle: true,
+         ShowYear: true,
+@@ -23,10 +26,17 @@ export const getDefaultLibraryViewSettings = (viewType: LibraryTab): LibraryView
+         CardLayout: false,
+         SortBy: getDefaultSortBy(viewType),
+         SortOrder: SortOrder.Ascending,
+-        StartIndex: 0
++        StartIndex: 0,
++        ...browseModeSettings
+     };
+ };
+ 
+-export const getSettingsKey = (viewType: LibraryTab, parentId: ParentId) => {
+-    return `${viewType} - ${parentId}`;
++/**
++ * Browse modes get their own storage key so that adjusting the sort within, say, "Just Added"
++ * does not overwrite the sort the user chose for the plain library view.
++ */
++export const getSettingsKey = (viewType: LibraryTab, parentId: ParentId, browseMode?: string | null) => {
++    return browseMode ?
++        `${viewType} - ${parentId} - ${browseMode}` :
++        `${viewType} - ${parentId}`;
+ };
+diff --git a/src/apps/modern/routes/asyncRoutes/user.ts b/src/apps/modern/routes/asyncRoutes/user.ts
+index bcd9acd..23eebdf 100644
+--- a/src/apps/modern/routes/asyncRoutes/user.ts
++++ b/src/apps/modern/routes/asyncRoutes/user.ts
+@@ -2,6 +2,7 @@ import { AsyncRoute } from 'components/router/AsyncRoute';
+ import { AppType } from 'constants/appType';
+ 
+ export const ASYNC_USER_ROUTES: AsyncRoute[] = [
++    { path: 'browse', type: AppType.Modern },
+     { path: 'home', type: AppType.Modern },
+     { path: 'homevideos', type: AppType.Modern },
+     { path: 'livetv', type: AppType.Modern },
+diff --git a/src/apps/modern/routes/browse/index.tsx b/src/apps/modern/routes/browse/index.tsx
+new file mode 100644
+index 0000000..0b60f46
+--- /dev/null
++++ b/src/apps/modern/routes/browse/index.tsx
+@@ -0,0 +1,231 @@
++import { BaseItemKind } from '@jellyfin/sdk/lib/generated-client/models/base-item-kind';
++import { CollectionType } from '@jellyfin/sdk/lib/generated-client/models/collection-type';
++import Box from '@mui/material/Box';
++import ButtonBase from '@mui/material/ButtonBase';
++import Stack from '@mui/material/Stack';
++import Typography from '@mui/material/Typography';
++import React, { type FC, useCallback, useMemo, useState } from 'react';
++import { useNavigate, useSearchParams } from 'react-router-dom';
++
++import { getBrowseModes } from 'apps/modern/features/libraries/constants/browseModes';
++import { LibraryRoutes } from 'apps/modern/features/libraries/constants/libraryRoutes';
++import Page from 'components/Page';
++import { useGetQueryFiltersLegacy } from 'hooks/useFetchItems';
++import { useItem } from 'hooks/useItem';
++import globalize from 'lib/globalize';
++import type { BrowseModeDefinition } from 'types/browseMode';
++
++const DECADE_LENGTH = 10;
++
++/** Item kinds whose production years decide which decades are worth offering. */
++const ITEM_KIND_BY_COLLECTION_TYPE: Partial<Record<CollectionType, BaseItemKind>> = {
++    [CollectionType.Movies]: BaseItemKind.Movie,
++    [CollectionType.Tvshows]: BaseItemKind.Series
++};
++
++interface TileProps {
++    label: string;
++    Icon?: BrowseModeDefinition['Icon'];
++    iconColor?: string;
++    onClick: () => void;
++}
++
++const Tile: FC<TileProps> = ({ label, Icon, iconColor, onClick }) => (
++    <ButtonBase
++        onClick={onClick}
++        focusRipple
++        className='card'
++        sx={{
++            flexDirection: 'column',
++            gap: 1,
++            justifyContent: 'center',
++            width: '100%',
++            aspectRatio: '16 / 9',
++            padding: 2,
++            borderRadius: 1,
++            backgroundColor: 'action.hover',
++            transition: 'background-color 120ms ease, transform 120ms ease',
++            '&:hover, &:focus-visible': {
++                backgroundColor: 'action.selected',
++                transform: 'scale(1.03)'
++            }
++        }}
++    >
++        {Icon ? <Icon sx={{ fontSize: '2.5rem', color: iconColor }} /> : null}
++        <Typography variant='subtitle1' sx={{ textAlign: 'center', lineHeight: 1.2 }}>
++            {label}
++        </Typography>
++    </ButtonBase>
++);
++
++const BrowseModeTile: FC<{
++    definition: BrowseModeDefinition;
++    onSelect: (definition: BrowseModeDefinition) => void;
++}> = ({ definition, onSelect }) => {
++    const onClick = useCallback(() => onSelect(definition), [onSelect, definition]);
++
++    return (
++        <Tile
++            label={globalize.translate(definition.label)}
++            Icon={definition.Icon}
++            iconColor={definition.iconColor}
++            onClick={onClick}
++        />
++    );
++};
++
++const PickTile: FC<{
++    label: string;
++    value: string;
++    onSelect: (value: string) => void;
++}> = ({ label, value, onSelect }) => {
++    const onClick = useCallback(() => onSelect(value), [onSelect, value]);
++
++    return <Tile label={label} onClick={onClick} />;
++};
++
++const TileGrid: FC<{ children: React.ReactNode }> = ({ children }) => (
++    <Box
++        sx={{
++            display: 'grid',
++            gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
++            gap: 2
++        }}
++    >
++        {children}
++    </Box>
++);
++
++const Browse: FC = () => {
++    const navigate = useNavigate();
++    const [searchParams] = useSearchParams();
++    const [activePicker, setActivePicker] = useState<BrowseModeDefinition | null>(null);
++
++    const libraryId = searchParams.get('topParentId');
++    const collectionType = searchParams.get('collectionType') as CollectionType | null;
++
++    const { data: library } = useItem(libraryId ?? undefined);
++    const browseModes = getBrowseModes(collectionType);
++
++    const libraryPath = useMemo(
++        () => LibraryRoutes.find(route => route.type === collectionType)?.path,
++        [collectionType]
++    );
++
++    const itemKind = collectionType ? ITEM_KIND_BY_COLLECTION_TYPE[collectionType] : undefined;
++    const { data: filters } = useGetQueryFiltersLegacy(libraryId, itemKind ? [itemKind] : []);
++
++    // Only offer values the library actually has something under. A decade is expanded into the
++    // ten years it covers, since that is what the items are actually tagged with.
++    const pickOptions = useMemo(() => {
++        if (activePicker?.picker?.filter === 'Years') {
++            const years = filters?.Years;
++            if (!years?.length) {
++                return [];
++            }
++
++            const startYears = [...new Set(years.map(year => Math.floor(year / DECADE_LENGTH) * DECADE_LENGTH))];
++            startYears.sort((a, b) => b - a);
++
++            return startYears.map(startYear => ({
++                label: `${startYear}s`,
++                value: Array.from({ length: DECADE_LENGTH }, (_, offset) => startYear + offset).join(',')
++            }));
++        }
++
++        if (activePicker?.picker?.filter === 'OfficialRatings') {
++            return (filters?.OfficialRatings ?? [])
++                .slice()
++                .sort((a, b) => a.localeCompare(b))
++                .map(rating => ({ label: rating, value: rating }));
++        }
++
++        return [];
++    }, [activePicker, filters?.Years, filters?.OfficialRatings]);
++
++    const goToLibrary = useCallback((search: string) => {
++        if (!libraryPath || !libraryId) {
++            return;
++        }
++
++        const params = new URLSearchParams(search);
++        params.set('topParentId', libraryId);
++        if (collectionType) {
++            params.set('collectionType', collectionType);
++        }
++
++        navigate(`${libraryPath}?${params.toString()}`);
++    }, [navigate, libraryPath, libraryId, collectionType]);
++
++    const onModeClick = useCallback((definition: BrowseModeDefinition) => {
++        if (definition.picker) {
++            setActivePicker(definition);
++            return;
++        }
++
++        // Modes backed by an existing view open that view's tab; the rest seed the sort and
++        // filters of the library's default view.
++        if (definition.view) {
++            const views = LibraryRoutes.find(route => route.type === collectionType)?.views ?? [];
++            const index = views.find(view => view.view === definition.view)?.index;
++            goToLibrary(index === undefined ? '' : `tab=${index}`);
++            return;
++        }
++
++        goToLibrary(definition.settings ? `browseMode=${definition.mode}` : '');
++    }, [collectionType, goToLibrary]);
++
++    const onPickClick = useCallback((value: string) => {
++        if (!activePicker) {
++            return;
++        }
++
++        goToLibrary(`browseMode=${activePicker.mode}&pick=${encodeURIComponent(value)}`);
++    }, [goToLibrary, activePicker]);
++
++    return (
++        <Page
++            id='browseModesPage'
++            className='mainAnimatedPage libraryPage'
++            title={library?.Name ?? undefined}
++        >
++            <Box className='padded-left padded-right padded-top padded-bottom-page'>
++                <Stack spacing={3}>
++                    <Typography variant='h1'>
++                        {library?.Name ?? globalize.translate('HeaderBrowseBy')}
++                    </Typography>
++
++                    {activePicker ? (
++                        <>
++                            <Typography variant='h2'>
++                                {globalize.translate(activePicker.label)}
++                            </Typography>
++                            <TileGrid>
++                                {pickOptions.map(option => (
++                                    <PickTile
++                                        key={option.value}
++                                        label={option.label}
++                                        value={option.value}
++                                        onSelect={onPickClick}
++                                    />
++                                ))}
++                            </TileGrid>
++                        </>
++                    ) : (
++                        <TileGrid>
++                            {browseModes?.map(definition => (
++                                <BrowseModeTile
++                                    key={definition.mode}
++                                    definition={definition}
++                                    onSelect={onModeClick}
++                                />
++                            ))}
++                        </TileGrid>
++                    )}
++                </Stack>
++            </Box>
++        </Page>
++    );
++};
++
++export default Browse;
+diff --git a/src/components/cardbuilder/Card/CardImageContainer.tsx b/src/components/cardbuilder/Card/CardImageContainer.tsx
+index 8701329..370faa4 100644
+--- a/src/components/cardbuilder/Card/CardImageContainer.tsx
++++ b/src/components/cardbuilder/Card/CardImageContainer.tsx
+@@ -61,6 +61,10 @@ const CardImageContainer: FC<CardImageContainerProps> = ({
+                 </Box>
+             )}
+ 
++            {cardOptions.showRank && item.IndexNumber != null && (
++                <Box className='cardRankBadge'>{item.IndexNumber}</Box>
++            )}
++
+             <Media item={item} imgUrl={imgUrl} blurhash={blurhash} imageType={cardOptions.imageType} />
+ 
+             {overlayText && (
+diff --git a/src/components/cardbuilder/card.scss b/src/components/cardbuilder/card.scss
+index 90a8604..ac3faa1 100644
+--- a/src/components/cardbuilder/card.scss
++++ b/src/components/cardbuilder/card.scss
+@@ -883,3 +883,21 @@ button::-moz-focus-inner {
+     transform: scale(1.4, 1.4);
+     transition: 0.2s;
+ }
++
++// Position within a ranked list (TMDb trending, top rated).
++.cardRankBadge {
++    position: absolute;
++    top: 0.4em;
++    left: 0.4em;
++    z-index: 1;
++    min-width: 1.9em;
++    padding: 0.15em 0.45em;
++    border-radius: 0.4em;
++    background-color: rgba(0, 0, 0, 0.75);
++    color: #fff;
++    font-size: 0.9em;
++    font-weight: 600;
++    line-height: 1.5;
++    text-align: center;
++    pointer-events: none;
++}
+diff --git a/src/components/router/appRouter.js b/src/components/router/appRouter.js
+index aa0f20b..03652e8 100644
+--- a/src/components/router/appRouter.js
++++ b/src/components/router/appRouter.js
+@@ -6,6 +6,7 @@ import itemHelper from '../itemHelper';
+ import loading from '../loading/loading';
+ import alert from '../alert';
+ 
++import { shouldShowBrowseModes } from 'apps/modern/features/libraries/utils/path';
+ import layoutManager from 'components/layoutManager';
+ import { getItemQuery } from 'hooks/useItem';
+ import { ServerConnections } from 'lib/jellyfin-apiclient';
+@@ -406,6 +407,12 @@ class AppRouter {
+         if (context !== 'folders' && !itemHelper.isLocalItem(item)) {
+             const isModernLayout = layoutManager.modern;
+ 
++            // Opening a library offers the browse modes first. Deep links that already know the
++            // view they want (such as the latest media rows) bypass this and go straight there.
++            if (!options.section && shouldShowBrowseModes(item.CollectionType, item.Id)) {
++                return `#/browse?topParentId=${item.Id}&collectionType=${item.CollectionType}`;
++            }
++
+             if (isModernLayout && item.CollectionType == CollectionType.Books) {
+                 url = `#/books?topParentId=${item.Id}&collectionType=${item.CollectionType}`;
+ 
+diff --git a/src/hooks/useFetchItems.ts b/src/hooks/useFetchItems.ts
+index b819bb4..f28e7d5 100644
+--- a/src/hooks/useFetchItems.ts
++++ b/src/hooks/useFetchItems.ts
+@@ -1,7 +1,7 @@
+ import type { AxiosRequestConfig } from 'axios';
+ import type { LibraryApiGetItemsRequest } from '@jellyfin/sdk/lib/generated-client/api/library-api';
+ import type { PlaylistApiMoveItemRequest } from '@jellyfin/sdk/lib/generated-client/api/playlist-api';
+-import type { BaseItemKind } from '@jellyfin/sdk/lib/generated-client/models/base-item-kind';
++import { BaseItemKind } from '@jellyfin/sdk/lib/generated-client/models/base-item-kind';
+ import { ImageType } from '@jellyfin/sdk/lib/generated-client/models/image-type';
+ import { ItemFields } from '@jellyfin/sdk/lib/generated-client/models/item-fields';
+ import { ItemFilter } from '@jellyfin/sdk/lib/generated-client/models/item-filter';
+@@ -223,6 +223,38 @@ export const useGetQueryFilters = (
+     });
+ };
+ 
++/**
++ * Fetches one of the curated TMDb lists, narrowed to items in the library.
++ *
++ * These are served by custom server endpoints, so there is no generated SDK client for them.
++ * The server returns items already ordered by TMDb's ranking.
++ */
++const fetchDiscoverList = (
++    api: NonNullable<JellyfinApiContext['api']>,
++    userId: string,
++    viewType: LibraryTab,
++    parentId: ParentId,
++    itemType: BaseItemKind[],
++    options?: AxiosRequestConfig
++) => {
++    const list = viewType === LibraryTab.TopRated ? 'TopRated' : 'Trending';
++    const kind = itemType.includes(BaseItemKind.Series) ? 'Shows' : 'Movies';
++
++    return api.axiosInstance.get<ItemDtoQueryResult>(
++        `${api.basePath}/Discover/${list}/${kind}`,
++        {
++            params: {
++                userId,
++                parentId: parentId ?? undefined,
++                fields: ItemFields.PrimaryImageAspectRatio,
++                limit: 48
++            },
++            headers: { Authorization: api.authorizationHeader },
++            signal: options?.signal
++        }
++    );
++};
++
+ const fetchGetItemsViewByType = async (
+     currentApi: JellyfinApiContext,
+     viewType: LibraryTab | undefined,
+@@ -366,6 +398,10 @@ const fetchGetItemsViewByType = async (
+                     }
+                 );
+                 break;
++            case LibraryTab.Trending:
++            case LibraryTab.TopRated:
++                response = await fetchDiscoverList(api, user.Id, viewType, parentId, itemType, options);
++                break;
+             default: {
+                 response = await getLibraryApi(api).getItems(
+                     {
+@@ -450,7 +486,9 @@ export const useGetItemsViewByType = (
+                 LibraryTab.SeriesTimers,
+                 LibraryTab.MusicVideos,
+                 LibraryTab.Folders,
+-                LibraryTab.Mixed
++                LibraryTab.Mixed,
++                LibraryTab.Trending,
++                LibraryTab.TopRated
+             ].includes(viewType)
+     });
+ };
+diff --git a/src/strings/en-us.json b/src/strings/en-us.json
+index 693468f..6384b26 100755
+--- a/src/strings/en-us.json
++++ b/src/strings/en-us.json
+@@ -37,6 +37,20 @@
+     "AlternateDVD" : "Alternate DVD",
+     "AlwaysBurnInSubtitleWhenTranscoding": "Always burn in subtitle when transcoding",
+     "AlwaysBurnInSubtitleWhenTranscodingHelp": "Burn in all subtitles when transcoding is triggered. This ensures subtitle synchronization after transcoding at the cost of reduced transcoding speed.",
++    "BrowseModeAgeRating": "Age Rating",
++    "BrowseModeAll": "All",
++    "BrowseModeBestUnseen": "Best Unseen",
++    "BrowseModeCriticsPicks": "Critics' Picks",
++    "BrowseModeDecades": "Decades",
++    "BrowseModeHighestRated": "Highest Rated",
++    "BrowseModeJustAdded": "Just Added",
++    "BrowseModeLongest": "Longest",
++    "BrowseModeNewReleases": "New Releases",
++    "BrowseModeRecentlyPlayed": "Recently Played",
++    "BrowseModeTopRated": "Top Rated",
++    "BrowseModeTrending": "Trending",
++    "BrowseModeUnwatched": "Unwatched",
++    "HeaderBrowseBy": "Browse by",
+     "LabelThrottleDelaySeconds": "Throttle after",
+     "LabelThrottleDelaySecondsHelp": "Time in seconds after which the transcoder will be throttled. Must be large enough for the client to maintain a healthy buffer. Only works if throttling is enabled.",
+     "LabelSegmentKeepSeconds": "Time to keep segments",
+@@ -169,6 +183,8 @@
+     "ChannelNumber": "Channel number",
+     "Channels": "Channels",
+     "CinemaModeConfigurationHelp": "Cinema mode brings the theater experience straight to your living room with the ability to play trailers and custom intros before the main feature.",
++    "MessageNoTopRatedItems": "None of the top rated titles are in this library.",
++    "MessageNoTrendingItems": "No trending titles are currently in this library.",
+     "SelectAudioNormalizationHelp": "Track gain - adjusts the volume of each track so they playback with the same loudness. Album gain - adjusts the volume of all the tracks in an album only, keeping the album's dynamic range. Switching between \"Off\" and other options requires restarting the current playback.",
+     "ClearQueue": "Clear queue",
+     "ClientSettings": "Client Settings",
+diff --git a/src/types/browseMode.ts b/src/types/browseMode.ts
+new file mode 100644
+index 0000000..9153332
+--- /dev/null
++++ b/src/types/browseMode.ts
+@@ -0,0 +1,51 @@
++import type { SvgIconComponent } from '@mui/icons-material';
++
++import type { LibraryViewSettings } from './library';
++import type { LibraryTab } from './libraryTab';
++
++/**
++ * The ways a library can be browsed, presented as tiles when a library is opened.
++ */
++export enum BrowseMode {
++    All = 'all',
++    Genres = 'genres',
++    Studios = 'studios',
++    JustAdded = 'justadded',
++    NewReleases = 'newreleases',
++    Random = 'random',
++    HighestRated = 'highestrated',
++    TopRated = 'toprated',
++    BestUnseen = 'bestunseen',
++    CriticsPicks = 'criticspicks',
++    Unwatched = 'unwatched',
++    Favorites = 'favorites',
++    RecentlyPlayed = 'recentlyplayed',
++    Longest = 'longest',
++    Decades = 'decades',
++    AgeRating = 'agerating',
++    Trending = 'trending'
++}
++
++/**
++ * A mode that shows a grid of values to narrow by before listing any items. The chosen values
++ * travel in the `pick` search param and end up in the named filter.
++ */
++export interface BrowsePicker {
++    filter: 'Years' | 'OfficialRatings';
++}
++
++export interface BrowseModeDefinition {
++    mode: BrowseMode;
++    /** Key passed to globalize.translate for the tile caption. */
++    label: string;
++    /** Icon shown on the tile. */
++    Icon: SvgIconComponent;
++    /** Colour of the tile icon. Kept in step with the Android TV client's palette. */
++    iconColor: string;
++    /** Opens this view rather than the library's default one. */
++    view?: LibraryTab;
++    /** Applied over the view's default settings; persisted separately per mode. */
++    settings?: Partial<LibraryViewSettings>;
++    /** Narrows by a chosen value before listing any items. */
++    picker?: BrowsePicker;
++}
+diff --git a/src/types/cardOptions.ts b/src/types/cardOptions.ts
+index 78f2214..282c003 100644
+--- a/src/types/cardOptions.ts
++++ b/src/types/cardOptions.ts
+@@ -91,6 +91,8 @@ export interface CardOptions {
+     showIndex?: boolean;
+     index?: string;
+     showIndexNumber?: boolean;
++    /** Shows the item's position in a ranked list, taken from IndexNumber. */
++    showRank?: boolean;
+     enableContentWrapper?: boolean;
+     enableOverview?: boolean;
+     enablePlayedButton?: boolean;
+diff --git a/src/types/libraryTab.ts b/src/types/libraryTab.ts
+index 46653b0..e9fa406 100644
+--- a/src/types/libraryTab.ts
++++ b/src/types/libraryTab.ts
+@@ -19,6 +19,8 @@ export enum LibraryTab {
+     Songs = 'songs',
+     Studios = 'studios',
+     Suggestions = 'suggestions',
++    TopRated = 'toprated',
++    Trending = 'trending',
+     Upcoming = 'upcoming',
+     PhotoAlbums = 'photoalbums',
+     Photos = 'photos',
