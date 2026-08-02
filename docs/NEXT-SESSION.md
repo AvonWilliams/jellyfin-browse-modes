@@ -59,3 +59,17 @@ Still parked from the previous session. See the previous NEXT-SESSION.md or TECH
 - **Committing.** All repos configured with noreply email. Do not set `user.email` per-commit.
 - **Plugin repository URL:** `https://avonwilliams.github.io/jellyfin-browse-modes/manifest.json`
 - **Two graphify-out directories exist** — one in `browse-modes/` parent (mostly empty, safe to delete) and the real one in `jellyfin-browse-modes/graphify-out/`.
+
+## Release procedure — READ BEFORE CUTTING A RELEASE
+
+**Critical: local builds and CI builds produce different checksums.** Jellyfin validates the md5 checksum in the manifest against the downloaded zip. If they don't match, installation silently fails.
+
+Correct order:
+1. Commit code changes
+2. Tag: `git tag -a vX.Y.Z.W -m "..."` and push: `git push origin main --tags`
+3. **Wait for CI to complete** (Actions → Plugin workflow)
+4. Open the CI run → expand "Report checksums" → copy both checksums
+5. Update `manifest.json` with the CI checksums (new entry at top of versions array)
+6. Commit and push the manifest update
+
+The CI step summary at `https://github.com/AvonWilliams/jellyfin-browse-modes/actions` has the checksums for each run.
