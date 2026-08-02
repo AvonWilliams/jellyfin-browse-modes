@@ -1,4 +1,4 @@
-# Handoff — 2026-08-02 session (final)
+# Handoff — 2026-08-02
 
 Read this first; it points at everything else.
 
@@ -6,92 +6,84 @@ Read this first; it points at everything else.
 
 ### Plugin backported to Jellyfin 10.11.x (stable) — v1.0.2.1
 
-The plugin now has **two build targets** sharing one codebase:
+Two build targets sharing one codebase: 12.x (`net10.0`) and 10.11 (`net9.0`).
+CI builds both and attaches both zips to the GitHub Release.
 
-| | 12.x | 10.11 |
+Three changes from the 12.x plugin:
+1. **`DiscoverController.cs`** — In-memory provider-id matching (works on both versions)
+2. **`TmdbDiscoverClient.cs`** — Lazy `TMDbClient` init (avoids throw on empty API key)
+3. **`manifest.json`** — Two targetAbi entries per version
+
+### Web client backported to Jellyfin 10.11 — ✅
+
+**Branch:** `browse-modes-10.11` in `AvonWilliams/jellyfin-web`
+**Directory:** `jellyfin-web-10.11/` (fresh clone from `v10.11.0-rc9`)
+**Deployed to:** Docker `jf-test-10` (port 8196) with media libraries from production
+
+17 files, ~900 lines. All 17 movie / 16 series modes ported.
+Build: `tsc --noEmit` clean, eslint clean, webpack production passes.
+
+### Four 10.11-specific bugs found and fixed
+
+| Bug | Root cause | Fix |
 |---|---|---|
-| Directory | `plugin/Jellyfin.Plugin.BrowseModes/` | `plugin/Jellyfin.Plugin.BrowseModes.10_11/` |
-| Framework | `net10.0` | `net9.0` |
-| Jellyfin pkgs | `12.0.0-rc3` | `10.11.11` |
-| targetAbi | `12.0.0.0` | `10.11.0.0` |
-| Source | Own `.cs` files | Links to 12.x sources via `**/*.cs` glob |
+| Tiles never appeared | `layoutManager.experimental` defaults false in 10.11 | Removed from `shouldShowBrowseModes` guard |
+| CollectionType always undefined | 10.11 sidebar passes type via `options.context`, not on item | Fall back to options.context + path inference |
+| "Page not found" on #/browse | RootAppRouter only loads experimental routes when localStorage layout='experimental' | Always load EXPERIMENTAL_APP_ROUTES (matches 12.x) |
+| Clicking movies looped back to tiles | Card click handlers pass collectionType via `options.context`; interception picked it up | Gate entire interception on `item.Type === 'CollectionFolder'` |
 
-**Three changes from the 12.x plugin:**
+### Improvements added during port
 
-1. **`DiscoverController.cs`** — Replaced `HasAnyProviderIds` (doesn't exist in 10.11) with in-memory matching. Fetches all items of the given `BaseItemKind`, ranks them locally. Works on both 10.11 and 12.x.
-2. **`TmdbDiscoverClient.cs`** — TMDbLib 3.0.0 throws `ArgumentException` on empty API key. The `TMDbClient` is now created lazily (only when an API key is actually configured). Every code path already checks `HasApiKey` before use.
-3. **`manifest.json`** — Two entries per version (one `targetAbi: 10.11.0.0`, one `targetAbi: 12.0.0.0`). Same manifest URL serves both Jellyfin versions.
+- **New Releases**: Now filters to 9-month cutoff (`MinPremiereDate`)
+- **Recently Played**: Now filtered to `IsPlayed` items only
+- **Studios**: Added to switch case and enabled allowlist (was missing vs 12.x)
 
-**CI** builds both projects, packages two zips (`browse-modes_X.Y.Z.W_12.x.zip` and `browse-modes_X.Y.Z.W_10.11.zip`), attaches both to the GitHub Release.
+### Claude config repo
 
-**git:** All on `main`, pushed. Tags: `v1.0.2.0` (first backport), `v1.0.2.1` (TMDb constructor fix).
-
-### Bugs found and fixed this session
-
-1. **Manifest checksums didn't match CI builds** — Local builds produce different byte output (different PDB paths, timestamps). Jellyfin silently rejects the download. Fixed by pulling checksums from CI step summary. **See release procedure below.**
-2. **`TMDbClient("")` constructor throws** — Fixed in v1.0.2.1. Client is now lazy-initialized.
-
-### Global CLAUDE.md updates
-
-- §10: Sensitive Data (never commit keys, emails, passwords)
-- §11: Release Artifacts (never use local checksums for CI-built artifacts)
-
-### Graphify
-
-Ran on `jellyfin-browse-modes/`. Output in `graphify-out/`: `graph.html`, `graph.json`, `GRAPH_REPORT.md`. 296 nodes, 507 edges, 24 communities.
+Private repo `AvonWilliams/claude-config` with CLAUDE.md, settings.json, commands/, and skills/.
+Install by copying files into `~/.claude/`.
 
 ---
 
-## Next: Web client backport to Jellyfin 10.11 — ✅ DONE (2026-08-02)
+## Next session: category-upgrades.md
 
-**Branch:** `browse-modes-10.11` in `AvonWilliams/jellyfin-web` (pushed).
-**Directory:** `jellyfin-web-10.11/` (fresh clone from `v10.11.0-rc9`).
-
-Built and deployed to Docker `jf-test-10` (port 8196). `tsc --noEmit` clean, eslint clean
-(pre-existing `useCallback` missing-dep warning only), webpack production build passes.
-
-The 12.x web bundle was installed on a 10.11.11 server. Observations:
-- The **tile page mostly works** — the `modern` app routes seemed to resolve
-- The **Plugins admin page crashes** with a React error in `plugins.*.chunk.js`
-- The catalog/filtering worked (v1.0.2.1 showed up and installed successfully)
-
-Scoped in `docs/BACKPORT-10.11.md` at 2–3 days. Key differences from 12.x:
-
-| Concern | 12.x | 10.11 |
-|---|---|---|
-| App structure | `modern` / `legacy` | `experimental` / `stable` |
-| Tab definitions | `apps/modern/features/libraries/constants/views/{movies,tvshows}.ts` | Inline in `apps/experimental/routes/{movies,shows}/index.tsx` |
-| Settings key + defaults | `apps/modern/features/libraries/utils/settings.ts` | `src/utils/items.ts` (identical signatures) |
-| Per-view localStorage | `hooks/useLibrary.tsx` | `apps/experimental/components/library/ItemsView.tsx:74` |
-| Router interception | `components/router/appRouter.js:410` | `appRouter.js:403` (same pattern) |
-| Route registration | `apps/modern/routes/asyncRoutes/user.ts` | `apps/experimental/routes/asyncRoutes/user.ts` (`AppType.Experimental`) |
-| `LibraryProvider` context | Present | **Absent** — settings logic folds into `ItemsView.tsx` |
-
-**What aligns:** Settings keys, router interception, rank badge (`CardImageContainer.tsx` + `card.scss` at same paths), `LibraryTab`, `cardOptions.ts`, `useFetchItems.ts`, `browseMode.ts` types. The preset-seeding mechanism transplants directly.
-
-**What's different:** The `patches/jellyfin-web-browse-modes.patch` will NOT apply to 10.11. Treat it as reference only. This is a genuine re-port, not a patch rebase.
-
-**Strategy:** Make a **separate 10.11 web branch** (`browse-modes-10.11`) in the `jellyfin-web` fork. Keep the existing `browse-modes` branch for 12.x. Two distinct bundles, like we did for the plugin.
+The user mentioned working on `docs/category-upgrades.md` — this file doesn't exist yet.
+Create it and scope the work at the start of next session.
 
 ---
+
+## Known issues (not yet resolved)
+
+- **Trending / Top Rated** may not load items in the client. The Discover API is verified
+  working server-side (returns items via curl). Client-side `fetchDiscoverList` in
+  `useFetchItems.ts` might have a URL or auth issue in 10.11.
+- **Shows** library on the test container has `CollectionType: null` — needs proper setup
+  via the Jellyfin library wizard, not just config file copy. Path inference handles it in
+  the router, but it may affect other things.
 
 ## Docker test environment
-
-A Jellyfin 10.11.11 container is running locally for testing:
 
 ```
 Container: jf-test-10
 Image:     jellyfin/jellyfin:10.11.11
 Port:      8196 → container 8096
-Config:    /tmp/jf-test/config
-Cache:     /tmp/jf-test/cache
+Config:    /tmp/jf-test/config (bind-mounted)
+Cache:     /tmp/jf-test/cache (bind-mounted)
+Media:     /mnt/208C2E0C8C2DDCD2/Video → /video (ro, from production)
+           /mnt/media → /media (ro)
+Web dist:  jellyfin-web-10.11/dist → /jellyfin/jellyfin-web (ro, bind-mounted)
+           changes picked up live — rebuild and hard-refresh (Ctrl+Shift+R)
 ```
 
-The plugin (v1.0.2.1, CI-built) is installed and working. A TMDb API key is configured in the plugin config at `/tmp/jf-test/config/plugins/configurations/Jellyfin.Plugin.BrowseModes.xml`.
+### Commands
 
-**Commands:**
 ```bash
-# Check it's running
+# Build
+cd jellyfin-web-10.11
+export PATH=$PWD/../.toolchain/node-v24.9.0-linux-x64/bin:$PATH
+npm run build:production
+
+# Check container
 docker ps --filter name=jf-test-10
 
 # View logs
@@ -100,54 +92,21 @@ docker logs jf-test-10 --tail 50
 # Restart
 docker restart jf-test-10
 
-# Shell in
-docker exec -it jf-test-10 sh
-
-# Remove when done
-docker rm -f jf-test-10
-
-# Update plugin (after rebuilding)
-docker exec jf-test-10 rm -rf /config/plugins/BrowseModes_1.0.2.1
-docker cp plugin/Jellyfin.Plugin.BrowseModes.10_11/bin/Release/net9.0/. jf-test-10:/config/plugins/BrowseModes_1.0.2.1/
-# (also copy meta.json)
-docker restart jf-test-10
+# API test (get token from DB first)
+TOKEN=$(python3 -c "import sqlite3; print(list(sqlite3.connect('/tmp/jf-test/config/data/jellyfin.db').execute('SELECT AccessToken FROM Devices LIMIT 1'))[0][0])")
+curl -s "http://localhost:8196/Discover/Trending/Movies?limit=5" \
+  -H "Authorization: MediaBrowser Token=\"$TOKEN\""
 ```
-
-**Note:** The container has NO media libraries set up — it's for plugin load/API testing only. To test the Discover endpoints, use the Web UI at `http://localhost:8196` to complete setup wizard and create a library, then query the API.
-
----
-
-## Release procedure — READ BEFORE CUTTING A RELEASE
-
-**Critical: local builds and CI builds produce different checksums.** Jellyfin validates the md5 checksum against the downloaded zip. Mismatch = silent install failure.
-
-1. Commit code. Tag: `git tag -a vX.Y.Z.W -m "..."` and push with `--tags`.
-2. **Wait for CI** (Actions → Plugin workflow).
-3. Open the CI run → expand "Report checksums" step → copy both checksums.
-4. Add new entries to `manifest.json` with the CI checksums (put newest at top).
-5. Commit and push the manifest update.
-
-Never put locally-computed checksums into the manifest. See also `~/.claude/CLAUDE.md` §11.
-
----
-
-## Other parked items
-
-- **Tile reordering** — first judgement call, never revisited. Group by intent.
-- **Additional tiles** — candidates range from cheap (Shortest, Continue Watching) to expensive (Most Watched needs ranked endpoint).
-- **CI in web/Android TV repos** — only the plugin is automated. Web zip and APK are built/uploaded manually.
-- **Light-theme contrast** — icon colours chosen against dark theme.
-- **APK signing** — debug-signed. Installs beside official app.
 
 ## Quick reference
 
 | What | Where |
 |---|---|
-| Plugin repo | `jellyfin-browse-modes/` (this repo) |
-| Web fork | `jellyfin-web/` (branch `browse-modes`) |
+| Plugin repo | `jellyfin-browse-modes/` (branch `main`) |
+| Web 12.x fork | `jellyfin-web/` (branch `browse-modes`) |
+| Web 10.11 fork | `jellyfin-web-10.11/` (branch `browse-modes-10.11`) |
 | Android TV fork | `jellyfin-androidtv/` (branch `browse-modes`) |
 | Manifest URL | `https://avonwilliams.github.io/jellyfin-browse-modes/manifest.json` |
 | Docker test | `jf-test-10` on port 8196 |
-| Backport scoping | `docs/BACKPORT-10.11.md` |
-| Full technical ref | `docs/TECHNICAL.md` |
-| Web patch (12.x ref) | `patches/jellyfin-web-browse-modes.patch` |
+| Production | `jellyfin` Docker container (host networking, 12.0-rc3) |
+| Claude config | `AvonWilliams/claude-config` (private) |
