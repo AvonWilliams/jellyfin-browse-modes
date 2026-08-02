@@ -13,8 +13,38 @@ Design rationale and the architecture decision live in [docs/TECHNICAL.md](./doc
 | 4. CI and release artifacts | ✅ v1.0.1.0 released |
 | 5. Deploy to production | ✅ live on the real server, all three clients |
 
-**Next session:** see [docs/NEXT-SESSION.md](./docs/NEXT-SESSION.md) — tile reordering and new
-tile ideas.
+**Next session:** see [docs/NEXT-SESSION.md](./docs/NEXT-SESSION.md) — v2.0 refactor, Chunk 1d/1e (toggles).
+
+## 2026-08-03
+
+### Web client backported to Jellyfin 10.11 — DONE
+
+Branch `browse-modes-10.11` in `AvonWilliams/jellyfin-web`. 17 files, ~900 lines. All modes
+ported. Four 10.11-specific bugs found and fixed:
+
+- `layoutManager.experimental` defaults false → removed from `shouldShowBrowseModes` guard
+- CollectionType absent from API response → fallback to `options.context` + path inference
+- RootAppRouter gates experimental routes on localStorage → always load EXPERIMENTAL_APP_ROUTES
+- Card clicks looped back to tiles → gate interception on `item.Type === 'CollectionFolder'`
+
+Plus: `MinPremiereDate` 9-month cutoff on New Releases, `IsPlayed` filter on Watch Again,
+Studios added to useFetchItems switch/allowlist. Built and tested in Docker `jf-test-10`.
+
+### v2.0 refactor started — Chunks 1a/1b/1c complete
+
+Based on `category-upgrades.md`. Created `docs/PLAN.md` with 5 chunks by difficulty.
+
+Chunk 1a: Removed Highest Rated (local sort), Longest, Favorites, Unwatched
+Chunk 1b: Renamed Best Unseen → Hidden Gems, Recently Played → Watch Again
+Chunk 1c: Reordered tiles to spec order
+
+Both 12.x (`browse-modes`) and 10.11 (`browse-modes-10.11`) updated, built, deployed
+to Docker test containers. Current: 13 movie tiles, 12 TV tiles.
+
+### Infrastructure
+
+- `AvonWilliams/claude-config` private repo created with CLAUDE.md, skills, commands
+- 12.x web bundle deployed to Docker `jellyfin` container for local testing
 
 **Live:**
 - https://github.com/AvonWilliams/jellyfin-browse-modes — plugin, docs, CI

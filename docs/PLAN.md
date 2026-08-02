@@ -10,9 +10,16 @@ Based on `category-upgrades.md`. Tracked in chunks by difficulty.
 
 ✅ **1a. Remove tiles:** Highest Rated (local sort), Longest, Favorites, Unwatched  
 ✅ **1b. Rename tiles:** Best Unseen → Hidden Gems, Recently Played → Watch Again  
-⬜ **1c. Reorder tiles:** Match the spec order in `category-upgrades.md`  
+✅ **1c. Reorder tiles:** Match the spec order in `category-upgrades.md`  
 ⬜ **1d. Per-library toggle:** Plugin config option to enable/disable browse modes per library type  
 ⬜ **1e. Per-tile toggle:** Plugin config option to show/hide individual tiles; client filters enabled list
+
+**1d/1e plan (not yet implemented):**
+- Add `EnableForMovies`, `EnableForTvShows`, `DisabledTiles` to `PluginConfiguration.cs`
+- Update `config.html` with checkboxes grouped by library type
+- Client fetches plugin config via `GET /Plugins/{id}/Configuration`, caches it, filters arrays
+- New client hook: `hooks/useBrowseConfig.ts`
+- Server-side config (not per-user) — one admin sets it, all users get same tiles
 
 Files: `browseModes.ts`, `en-us.json`, `PluginConfiguration.cs`, `config.html`
 
@@ -51,9 +58,64 @@ Files: new Vault components, `browseModes.ts`, possibly plugin endpoints
 
 ---
 
+## Current tile inventory (post-Chunk 1)
+
+### Movies (13 tiles)
+1. All
+2. Trending
+3. Top Rated
+4. Genres
+5. Hidden Gems
+6. Just Added
+7. New Releases
+8. Random
+9. Critics' Picks
+10. Watch Again
+11. Decades
+12. Studios
+13. Age Rating
+
+### TV Shows (12 tiles)
+1. All
+2. Trending
+3. Top Rated
+4. Genres
+5. Hidden Gems
+6. Just Added
+7. New Releases
+8. Random
+9. Watch Again
+10. Decades
+11. Networks
+12. Age Rating
+
+---
+
+## Two codebases
+
+| | 12.x | 10.11 |
+|---|---|---|
+| Repo | `jellyfin-web/` | `jellyfin-web-10.11/` |
+| Branch | `browse-modes` | `browse-modes-10.11` |
+| App dir | `apps/modern/` | `apps/experimental/` |
+| Settings | `utils/settings.ts` | `utils/items.ts` |
+| Layout guard | `layoutManager.modern` | removed (RootAppRouter always loads experimental) |
+
+**Changes must be made in both.** The 10.11 backport has additional adaptations (no LibraryProvider, path-based CollectionType inference, etc.).
+
+## Test environments
+
+| | 10.11 | 12.0 |
+|---|---|---|
+| Container | `jf-test-10` | `jellyfin` |
+| Port | 8196 | host networking |
+| Web dist | bind-mounted | docker cp |
+| Media | /video (prod mount) | /video + /media |
+
 ## Sessions log
 
 | Date | Chunk | What |
 |---|---|---|
 | 2026-08-03 | — | Plan created |
-| 2026-08-03 | 1a+1b | Removed 4 tiles + renamed 2. Both 12.x and 10.11 updated, built, pushed |
+| 2026-08-03 | 1a+1b | Removed 4 tiles + renamed 2. Both codebases updated, built, pushed |
+| 2026-08-03 | 1c | Reordered tiles to match spec. Both codebases updated, built, pushed |
