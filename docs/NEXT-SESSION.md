@@ -42,7 +42,13 @@ Ran on `jellyfin-browse-modes/`. Output in `graphify-out/`: `graph.html`, `graph
 
 ---
 
-## Next: Web client backport to Jellyfin 10.11 — NOT STARTED
+## Next: Web client backport to Jellyfin 10.11 — ✅ DONE (2026-08-02)
+
+**Branch:** `browse-modes-10.11` in `AvonWilliams/jellyfin-web` (pushed).
+**Directory:** `jellyfin-web-10.11/` (fresh clone from `v10.11.0-rc9`).
+
+Built and deployed to Docker `jf-test-10` (port 8196). `tsc --noEmit` clean, eslint clean
+(pre-existing `useCallback` missing-dep warning only), webpack production build passes.
 
 The 12.x web bundle was installed on a 10.11.11 server. Observations:
 - The **tile page mostly works** — the `modern` app routes seemed to resolve
