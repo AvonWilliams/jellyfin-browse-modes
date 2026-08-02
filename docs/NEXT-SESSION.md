@@ -1,128 +1,61 @@
-# Handoff — where things stand and what's next
+# Handoff — 2026-08-02 session
 
-Written 2026-07-26. Read this first; it points at everything else.
+Read this first; it points at everything else.
 
-## State: shipped and running in production
+## What happened this session
 
-Browse Modes is **live on the real server** (Proxmox LXC `JellyClone`, CT 1056) and confirmed
-working on **web, Android phone and Android TV**.
+### Plugin backported to Jellyfin 10.11.x (stable) — SHIPPED as v1.0.2.0
 
-| Piece | Version | Where |
+The plugin now has **two build targets** sharing one codebase:
+
+| | 12.x | 10.11 |
 |---|---|---|
-| Plugin | 1.0.1.0 | [jellyfin-browse-modes](https://github.com/AvonWilliams/jellyfin-browse-modes) |
-| Web client | 1.0.1.0 | [jellyfin-web](https://github.com/AvonWilliams/jellyfin-web) fork, `browse-modes` branch |
-| Android TV | 1.0.1.0 | [jellyfin-androidtv](https://github.com/AvonWilliams/jellyfin-androidtv) fork, `browse-modes` branch |
+| Directory | `plugin/Jellyfin.Plugin.BrowseModes/` | `plugin/Jellyfin.Plugin.BrowseModes.10_11/` |
+| Framework | `net10.0` | `net9.0` |
+| Jellyfin pkgs | `12.0.0-rc3` | `10.11.11` |
+| targetAbi | `12.0.0.0` | `10.11.0.0` |
+| Source | Own `.cs` files | Links to 12.x sources via `**/*.cs` glob |
 
-Plugin repository URL: `https://avonwilliams.github.io/jellyfin-browse-modes/manifest.json`
+**The fix that made it work:** `DiscoverController.cs` no longer uses `HasAnyProviderIds` (doesn't exist in 10.11). Instead it fetches all items of the given `BaseItemKind` and ranks them in memory. Simpler, and works on both versions.
 
-The server runs **stock Jellyfin 12.0-rc3** — no forked server anywhere. See
-[TECHNICAL.md §1](./TECHNICAL.md) for why the server half could become a plugin and the UI half
-could not.
+**CI** (`.github/workflows/plugin.yml`) builds both, packages both zips, and attaches both to the GitHub Release. The manifest on GitHub Pages lists both with distinct `targetAbi` values so each Jellyfin version sees its own entry.
 
-## Next up (what this session ended on)
+**Commit:** `4f88c64` on `main`, tagged `v1.0.2.0`, pushed to GitHub. CI should produce the release artifacts.
 
-Two pieces of work, neither started:
+### Global CLAUDE.md updated
 
-### 1. Reorder the tiles
+Added §10 (Sensitive Data) — never commit email addresses, API keys, tokens, passwords, hostnames, or personal info to git.
 
-The current order was a judgement call and has never been revisited. It is defined in two places
-that must be kept in step:
+### Graphify run
 
-- Web: `src/apps/modern/features/libraries/constants/browseModes.ts` — `movieBrowseModes` and
-  `tvBrowseModes`
-- Android TV: `ui/browsing/browsemodes/BrowseModes.kt` — `movieBrowseModes` and
-  `seriesBrowseModes`
+Ran `/graphify` on `jellyfin-browse-modes/` (41 files). Output in `graphify-out/`: `graph.html`, `graph.json`, `GRAPH_REPORT.md`. 296 nodes, 507 edges, 24 communities.
 
-Current order (movies): All, Unwatched, Just Added, Best Unseen, Random, Favorites, Genres,
-Highest Rated, Top Rated, Trending, New Releases, Decades, Studios, Recently Played, Age Rating,
-Critics' Picks, Longest.
+## What still needs doing
 
-Worth deciding on a *principle* rather than shuffling by feel. One option is grouping by intent:
+### 1. Web client backport to 10.11 — NOT STARTED
 
-| Group | Tiles |
-|---|---|
-| Escape hatch | All |
-| "What should I watch?" | Unwatched, Best Unseen, Random |
-| Curated / external | Trending, Top Rated, Critics' Picks, Highest Rated |
-| Recency | Just Added, New Releases, Recently Played |
-| Browse by attribute | Genres, Studios/Networks, Decades, Age Rating |
-| Personal | Favorites |
-| Odds and ends | Longest |
+The user installed the 12.x web bundle on their 10.11.11 server. The tile page mostly works but the **Plugins admin page crashes** with a React error in `plugins.3feb857a0c22366a9944.chunk.js`. This is expected — the 12.x `modern` app doesn't exist in 10.11.
 
-Note the TV grid is 4 columns, so order changes how things land in rows — the first four tiles are
-the ones actually seen without scrolling.
+Scoped in `docs/BACKPORT-10.11.md` at 2–3 days. The key differences:
+- No `modern` app — everything lives in `experimental`
+- Tab definitions are inline, not in constants files
+- No `LibraryProvider` context
+- Settings live in `src/utils/items.ts` instead of `apps/modern/`
 
-### 2. Brainstorm additional tiles
+**Important:** When doing the web backport, make two distinct versions (like we did for the plugin) rather than modifying the existing 12.x web bundle to be universal. The user explicitly wants separate builds.
 
-Candidates below are grouped by how much work they'd be. Nothing here is decided.
+### 2. Verify the plugin actually loads on 10.11.11
 
-**Cheap — a plain sort or filter, same shape as existing presets:**
+Built and packaged locally, but not tested on a live 10.11 server. The zip is at `dist/browse-modes_1.0.2.0_10.11.zip`. Install by unpacking into `<config>/plugins/BrowseModes_1.0.2.0/`. The manifest entry on GitHub Pages should make it appear in the catalog once the CI release is published.
 
-| Idea | Backing | Note |
-|---|---|---|
-| Shortest | `Runtime` asc | Mirror of Longest. "I have 90 minutes" |
-| Continue Watching | `IsResumable` filter | Genuinely useful; currently only on the TV smart screen |
-| Watched | `IsPlayed` filter | Mirror of Unwatched; good for re-watching |
-| Oldest / Classics | `PremiereDate` asc | Mirror of New Releases |
-| Just Added & Unwatched | `DateCreated` desc + `IsUnplayed` | Combines two existing tiles; arguably the most-wanted view |
+### 3. Tile reordering and additional tiles
 
-**Moderate — needs a new filter or picker:**
+Still parked from the previous session. See the previous NEXT-SESSION.md or TECHNICAL.md §6.
 
-| Idea | Backing | Note |
-|---|---|---|
-| 4K / HD | quality filter | Jellyfin exposes `isHd` / `is4K` |
-| With Subtitles | `hasSubtitles` | Useful for accessibility |
-| By Year | picker, like Decades but finer | Reuses the picker machinery |
-| Tags | picker over tags | Only useful if the library is tagged |
-| Kids-safe | curated age-rating filter | A pre-filtered Age Rating; `pickTiles.ts` already grades ratings by restrictiveness |
+## Operational notes (carried forward)
 
-**Expensive — needs plugin or server work:**
-
-| Idea | Why |
-|---|---|
-| Most Watched | Dropped. Needs a ranked endpoint — see [TECHNICAL.md §6](./TECHNICAL.md) |
-| Because You Watched… | Recommendation logic; no existing endpoint |
-| People / Actors | Jellyfin can browse by person, but the TV client has this deliberately disabled upstream ("screen doesn't behave properly") |
-| Collections | Exists as a tab in the stock client; would need wiring as a tile |
-
-**Still missing on TV specifically:** Decades and Age Rating. Both are pickers, and
-`BrowseGridFragment` has no way to carry a picked value — see [TECHNICAL.md §6](./TECHNICAL.md).
-
-## Also parked
-
-- **[10.11 stable back-port](./BACKPORT-10.11.md)** — fully scoped, not started. Currently only
-  12.x is supported.
-- **CI in the two fork repos.** The web zip and APK are built locally and uploaded by hand; only
-  the plugin is automated.
-- **Light-theme contrast on web.** Icon colours were chosen against the dark theme, which is the
-  default. The palest — `#B0BEC5` (All), `#F2C14E` (Best Unseen) — will be weak on light.
-- **APK signing.** Debug-signed, which is why it installs beside the official app rather than
-  replacing it. Arguably the right default; revisit only if Play-style updates are wanted.
-- **Delete `AvonWilliams/jellyfin-browse-modes-leaked-delete-me`.** Private, harmless, but should
-  go. Needs an account with `delete_repo` scope.
-
-## Operational notes worth not rediscovering
-
-**Releases.** Every change gets a version — tag `vX.Y.Z.W`, CI builds the plugin and injects the
-version from the tag, then attach the web zip and APK and add a `manifest.json` entry. Never
-replace an asset on a published tag; that mistake is recorded in `CHANGELOG.md`.
-
-**The web bundle does not survive updates.** `jellyfin-web` is a real apt package on an LXC
-install, so any upgrade replaces `/usr/share/jellyfin/web`. It is currently held with
-`apt-mark hold jellyfin-web`. On Docker the same applies because the web root is baked into the
-image.
-
-**Browser cache is the usual culprit.** A plain reload is not enough for either the plugin
-catalog or the web bundle — clear the cache. This cost time twice in one session.
-
-**Plugin not in the catalog?** Check, in order: the status filter defaults to *Installed* and
-uninstalled entries are hidden (`routes/plugins/index.tsx:51`); the browser cached the list; the
-manifest 404'd when it was added.
-
-**Third-party plugin conflicts.** `JavaScriptInjector` rewrites `/usr/share/jellyfin/web/index.html`
-in place and will fight the bundle — install the bundle first, let it inject after. Meilisearch
-and others were disabled on the production box to rule out interference.
-
-**Committing.** All three repos are configured with the GitHub noreply email. Do not set
-`user.email` per-commit; a personal address leaked that way once, and force-pushing did **not**
-remove it — see the incident note in `PROGRESS.md`.
+- **The web bundle does not survive updates.** On the user's LXC install, `apt-mark hold jellyfin-web` is set.
+- **Browser cache is the usual culprit.** Hard-refresh after deploying.
+- **Committing.** All repos configured with noreply email. Do not set `user.email` per-commit.
+- **Plugin repository URL:** `https://avonwilliams.github.io/jellyfin-browse-modes/manifest.json`
+- **Two graphify-out directories exist** — one in `browse-modes/` parent (mostly empty, safe to delete) and the real one in `jellyfin-browse-modes/graphify-out/`.
