@@ -1,6 +1,6 @@
 # Back-porting Browse Modes to Jellyfin 10.11 (stable)
 
-**Status: plugin done (1.0.2.0, 2026-08-02), web still parked.** This is a scoping document from
+**Status: plugin done (1.0.2.0, 2026-08-02), web done (2026-08-02).** This is a scoping document from
 research done on 2026-07-26, written so the work can be picked up without repeating the
 investigation. The plugin half was completed and released; the web half remains.
 
