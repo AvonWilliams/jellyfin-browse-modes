@@ -20,24 +20,52 @@ namespace Jellyfin.Plugin.BrowseModes;
 public sealed class TmdbDiscoverClient : IDisposable
 {
     private readonly MemoryCache _memoryCache = new MemoryCache(new MemoryCacheOptions());
-    private readonly TMDbClient _tmDbClient;
+    private TMDbClient? _tmDbClient;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TmdbDiscoverClient"/> class.
     /// </summary>
+    /// <remarks>
+    /// Does not construct a <see cref="TMDbClient"/> unless an API key has been configured,
+    /// because TMDbLib 3.0.0 throws on an empty key. Every code path that touches the client
+    /// already checks <see cref="HasApiKey"/> first.
+    /// </remarks>
     public TmdbDiscoverClient()
     {
-        _tmDbClient = new TMDbClient(Plugin.Instance?.Configuration.TmdbApiKey ?? string.Empty)
+        var apiKey = Plugin.Instance?.Configuration.TmdbApiKey;
+        if (!string.IsNullOrWhiteSpace(apiKey))
         {
-            // Not really interested in NotFoundException.
-            ThrowApiExceptions = false
-        };
+            _tmDbClient = new TMDbClient(apiKey)
+            {
+                ThrowApiExceptions = false
+            };
+        }
     }
 
     /// <summary>
     /// Gets a value indicating whether a TMDb API key has been configured.
     /// </summary>
     public static bool HasApiKey => !string.IsNullOrWhiteSpace(Plugin.Instance?.Configuration.TmdbApiKey);
+
+    /// <summary>
+    /// Gets the TMDb client, creating it lazily so that setting the API key after plugin load
+    /// (which requires a server restart) results in a working client on the next request.
+    /// </summary>
+    private TMDbClient TmDbClient
+    {
+        get
+        {
+            if (_tmDbClient is null && HasApiKey)
+            {
+                _tmDbClient = new TMDbClient(Plugin.Instance!.Configuration.TmdbApiKey!)
+                {
+                    ThrowApiExceptions = false
+                };
+            }
+
+            return _tmDbClient!;
+        }
+    }
 
     /// <summary>
     /// Gets how many pages of each list to scan.
@@ -57,7 +85,7 @@ public sealed class TmdbDiscoverClient : IDisposable
     {
         return GetListIdsAsync(
             $"trending-movies-{timeWindow}-{pages.ToString(CultureInfo.InvariantCulture)}",
-            async page => (await _tmDbClient.GetTrendingMoviesAsync(timeWindow, page, cancellationToken: cancellationToken)
+            async page => (await TmDbClient.GetTrendingMoviesAsync(timeWindow, page, cancellationToken: cancellationToken)
                 .ConfigureAwait(false))?.Results?.Select(result => result.Id),
             pages);
     }
@@ -73,7 +101,7 @@ public sealed class TmdbDiscoverClient : IDisposable
     {
         return GetListIdsAsync(
             $"trending-series-{timeWindow}-{pages.ToString(CultureInfo.InvariantCulture)}",
-            async page => (await _tmDbClient.GetTrendingTvAsync(timeWindow, page, cancellationToken: cancellationToken)
+            async page => (await TmDbClient.GetTrendingTvAsync(timeWindow, page, cancellationToken: cancellationToken)
                 .ConfigureAwait(false))?.Results?.Select(result => result.Id),
             pages);
     }
@@ -88,7 +116,7 @@ public sealed class TmdbDiscoverClient : IDisposable
     {
         return GetListIdsAsync(
             $"toprated-movies-{pages.ToString(CultureInfo.InvariantCulture)}",
-            async page => (await _tmDbClient.GetMovieTopRatedListAsync(page: page, cancellationToken: cancellationToken)
+            async page => (await TmDbClient.GetMovieTopRatedListAsync(page: page, cancellationToken: cancellationToken)
                 .ConfigureAwait(false))?.Results?.Select(result => result.Id),
             pages);
     }
@@ -103,7 +131,7 @@ public sealed class TmdbDiscoverClient : IDisposable
     {
         return GetListIdsAsync(
             $"toprated-series-{pages.ToString(CultureInfo.InvariantCulture)}",
-            async page => (await _tmDbClient.GetTvShowTopRatedAsync(page: page, cancellationToken: cancellationToken)
+            async page => (await TmDbClient.GetTvShowTopRatedAsync(page: page, cancellationToken: cancellationToken)
                 .ConfigureAwait(false))?.Results?.Select(result => result.Id),
             pages);
     }
@@ -130,7 +158,7 @@ public sealed class TmdbDiscoverClient : IDisposable
         // Only the cache this instance created is disposed. The server's shared IMemoryCache is
         // deliberately not used, so nothing outside the plugin is affected.
         _memoryCache.Dispose();
-        _tmDbClient.Dispose();
+        _tmDbClient?.Dispose();
     }
 
     /// <summary>
