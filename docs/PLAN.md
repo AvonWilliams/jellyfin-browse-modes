@@ -8,13 +8,15 @@ Based on `category-upgrades.md`. Tracked in chunks by difficulty.
 
 ## Chunk 1: Easy — Tile cleanup & toggles
 
-⬜ **1a. Remove tiles:** Highest Rated (local sort), Longest, Favorites, Unwatched  
-⬜ **1b. Rename tiles:** Best Unseen → Hidden Gems, Recently Played → Watch Again  
+✅ **1a. Remove tiles:** Highest Rated (local sort), Longest, Favorites, Unwatched  
+✅ **1b. Rename tiles:** Best Unseen → Hidden Gems, Recently Played → Watch Again  
 ⬜ **1c. Reorder tiles:** Match the spec order in `category-upgrades.md`  
 ⬜ **1d. Per-library toggle:** Plugin config option to enable/disable browse modes per library type  
 ⬜ **1e. Per-tile toggle:** Plugin config option to show/hide individual tiles; client filters enabled list
 
 Files: `browseModes.ts`, `en-us.json`, `PluginConfiguration.cs`, `config.html`
+
+**Icon/color notes:** Renamed tiles keep their existing icons (Recommend → Hidden Gems, History → Watch Again). Clean up unused icon imports from removed tiles. New tiles in later chunks will need icon + color assignments.
 
 ## Chunk 2: Medium — More menu
 
@@ -54,3 +56,4 @@ Files: new Vault components, `browseModes.ts`, possibly plugin endpoints
 | Date | Chunk | What |
 |---|---|---|
 | 2026-08-03 | — | Plan created |
+| 2026-08-03 | 1a+1b | Removed 4 tiles + renamed 2. Both 12.x and 10.11 updated, built, pushed |
