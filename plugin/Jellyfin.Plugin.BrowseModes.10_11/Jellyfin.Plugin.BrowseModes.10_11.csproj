@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>false</ImplicitUsings>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <AssemblyName>Jellyfin.Plugin.BrowseModes</AssemblyName>
+    <RootNamespace>Jellyfin.Plugin.BrowseModes</RootNamespace>
+    <!-- A plugin is loaded from a folder, not via deps.json, so its third-party dependencies have
+         to sit next to it in the output. -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Same packages as the 12.x plugin, but pinned to the 10.11 stable release. -->
+    <!-- ExcludeAssets=runtime: the server already has these loaded. -->
+    <PackageReference Include="Jellyfin.Controller" Version="10.11.11" ExcludeAssets="runtime" />
+    <PackageReference Include="Jellyfin.Model" Version="10.11.11" ExcludeAssets="runtime" />
+    <PackageReference Include="Jellyfin.Data" Version="10.11.11" ExcludeAssets="runtime" />
+    <PackageReference Include="Jellyfin.Extensions" Version="10.11.11" ExcludeAssets="runtime" />
+
+    <!-- Not shipped by the server, so this one does need to travel with the plugin. -->
+    <PackageReference Include="TMDbLib" Version="3.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Share all source with the 12.x plugin. The in-memory item matching in DiscoverController
+         already works on both versions. -->
+    <Compile Include="../Jellyfin.Plugin.BrowseModes/**/*.cs" Exclude="../Jellyfin.Plugin.BrowseModes/obj/**/*.cs;../Jellyfin.Plugin.BrowseModes/bin/**/*.cs" />
+    <EmbeddedResource Include="../Jellyfin.Plugin.BrowseModes/Configuration/config.html" Link="Configuration\config.html" />
+  </ItemGroup>
+
+</Project>

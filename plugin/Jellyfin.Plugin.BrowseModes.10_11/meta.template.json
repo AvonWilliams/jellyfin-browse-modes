@@ -1,0 +1,15 @@
+{
+    "category": "General",
+    "changelog": "See the release notes.",
+    "description": "Adds trending and top rated discover lists, narrowed to the items your library already has.",
+    "guid": "0d5f6a1e-3b7c-4c62-9a4d-2e8f1b6c9a37",
+    "name": "Browse Modes",
+    "overview": "Discover lists backing the Browse Modes tile grid.",
+    "owner": "avonwilliams",
+    "targetAbi": "10.11.0.0",
+    "timestamp": "__TIMESTAMP__",
+    "version": "__VERSION__",
+    "status": "Active",
+    "autoUpdate": false,
+    "imagePath": ""
+}

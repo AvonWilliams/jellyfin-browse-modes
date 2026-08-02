@@ -3,6 +3,21 @@
 Versions cover the project as a whole — plugin, web client and Android TV client are released
 together under one number, even when only one of them changed. Each entry says which parts moved.
 
+## 1.0.2.0 — 2026-08-02
+
+**Plugin** — backported to Jellyfin 10.11.x (stable).
+
+- Retargeted from `net10.0` to `net9.0` and Jellyfin packages `12.0.0-rc3` → `10.11.11`.
+- Replaced `HasAnyProviderIds` SQL filtering with in-memory matching, so one plugin build serves
+  both 10.11.x and 12.x. The provider-id plural API doesn't exist in 10.11; the in-memory approach
+  works on both.
+- `targetAbi` lowered to `10.11.0.0` so the plugin appears in the 10.11 catalog.
+
+**Web client** — no change since 1.0.1.0. The 12.x web bundle is not compatible with 10.11; a
+separate backport is still needed.
+
+**Android TV** — no change since 1.0.0.0. Already targets 0.19.9 / 10.x.
+
 ## 1.0.1.0 — 2026-07-26
 
 **Web client**

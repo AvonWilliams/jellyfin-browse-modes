@@ -274,10 +274,6 @@ public class DiscoverController : ControllerBase
 
         var query = new InternalItemsQuery(user)
         {
-            HasAnyProviderIds = new Dictionary<string, string[]>
-            {
-                { MetadataProviders.Tmdb.ToString(), rankByTmdbId.Keys.ToArray() }
-            },
             IncludeItemTypes = [itemKind],
             Recursive = true,
             DtoOptions = queryDtoOptions

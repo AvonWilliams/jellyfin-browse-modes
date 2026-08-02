@@ -141,11 +141,11 @@ keeping it would have meant forking the server. Dropping one tile was the better
 
 ## Compatibility
 
-Built against **Jellyfin 12.0-rc3** and **Jellyfin Android TV 0.19.9**.
+Built against **Jellyfin 12.0-rc3** and **Jellyfin 10.11.11** (plugin only). Android TV: **0.19.9**.
 
-> **Jellyfin 10.x (stable) is not supported.** The plugin is filtered out of the catalog by its
-> `targetAbi`, and the web bundle targets an app that 10.x does not have. See the
-> [back-port scoping](docs/BACKPORT-10.11.md) for what supporting it would involve. A Jellyfin update will
+> **The plugin works on both 10.11.x (stable) and 12.x.** The web client currently targets 12.x
+> only — a 10.11 web backport is scoped but not built. See the
+> [back-port scoping](docs/BACKPORT-10.11.md) for details. A Jellyfin update will
 overwrite the web build, and the TV app will not auto-update — see the technical reference for
 how to re-apply to a newer release.
 

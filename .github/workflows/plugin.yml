@@ -23,49 +23,77 @@ jobs:
 
       - name: Resolve version
         id: version
-        # Tag builds are the real thing; everything else gets a throwaway build number so the
-        # artifact is still traceable back to a run.
         run: |
           if [ "$GITHUB_REF_TYPE" = "tag" ]; then VERSION="${GITHUB_REF_NAME#v}"
           else VERSION="0.0.0.${GITHUB_RUN_NUMBER}"; fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Building $VERSION"
 
-      - name: Build
+      # ── 12.x ──────────────────────────────────────────────────────────
+
+      - name: Build (12.x)
         run: |
           dotnet build plugin/Jellyfin.Plugin.BrowseModes/Jellyfin.Plugin.BrowseModes.csproj -c Release \
             -p:AssemblyVersion=${{ steps.version.outputs.version }} \
             -p:FileVersion=${{ steps.version.outputs.version }}
 
-      - name: Check shipped assemblies
-        # The plugin folder must contain exactly its own DLL plus TMDbLib and Newtonsoft.Json.
-        # A Jellyfin assembly appearing here means ExcludeAssets="runtime" was lost, which would
-        # give the plugin's AssemblyLoadContext duplicate type identities at runtime.
+      - name: Check shipped assemblies (12.x)
         run: |
           cd plugin/Jellyfin.Plugin.BrowseModes/bin/Release/net10.0
           ls *.dll
           if ls | grep -qE '^(Jellyfin\.(Controller|Model|Data|Extensions)|MediaBrowser\.)'; then
-            echo "::error::A Jellyfin assembly is being shipped with the plugin"
+            echo "::error::A Jellyfin assembly is being shipped with the 12.x plugin"
             exit 1
           fi
-          test -f TMDbLib.dll || { echo "::error::TMDbLib.dll missing from output"; exit 1; }
+          test -f TMDbLib.dll || { echo "::error::TMDbLib.dll missing from 12.x output"; exit 1; }
 
-      - name: Package
-        id: package
+      - name: Package (12.x)
+        id: package-12
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          mkdir -p dist/BrowseModes
-          cp plugin/Jellyfin.Plugin.BrowseModes/bin/Release/net10.0/*.dll dist/BrowseModes/
+          mkdir -p dist/12.x/BrowseModes
+          cp plugin/Jellyfin.Plugin.BrowseModes/bin/Release/net10.0/*.dll dist/12.x/BrowseModes/
           sed "s/__VERSION__/$VERSION/; s/__TIMESTAMP__/$(date -u +%Y-%m-%dT%H:%M:%SZ)/" \
-            plugin/meta.template.json > dist/BrowseModes/meta.json
-          cd dist/BrowseModes && zip -r ../browse-modes_${VERSION}.zip . && cd ../..
-          echo "checksum=$(md5sum dist/browse-modes_${VERSION}.zip | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+            plugin/meta.template.json > dist/12.x/BrowseModes/meta.json
+          cd dist/12.x/BrowseModes && zip -r ../../browse-modes_${VERSION}_12.x.zip . && cd ../../..
+          echo "checksum=$(md5sum dist/browse-modes_${VERSION}_12.x.zip | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
-      - name: Report checksum
-        # Printed so the manifest entry can be filled in without downloading the artifact.
+      # ── 10.11 ────────────────────────────────────────────────────────
+
+      - name: Build (10.11)
+        run: |
+          dotnet build plugin/Jellyfin.Plugin.BrowseModes.10_11/Jellyfin.Plugin.BrowseModes.10_11.csproj -c Release \
+            -p:AssemblyVersion=${{ steps.version.outputs.version }} \
+            -p:FileVersion=${{ steps.version.outputs.version }}
+
+      - name: Check shipped assemblies (10.11)
+        run: |
+          cd plugin/Jellyfin.Plugin.BrowseModes.10_11/bin/Release/net9.0
+          ls *.dll
+          if ls | grep -qE '^(Jellyfin\.(Controller|Model|Data|Extensions)|MediaBrowser\.)'; then
+            echo "::error::A Jellyfin assembly is being shipped with the 10.11 plugin"
+            exit 1
+          fi
+          test -f TMDbLib.dll || { echo "::error::TMDbLib.dll missing from 10.11 output"; exit 1; }
+
+      - name: Package (10.11)
+        id: package-10_11
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          mkdir -p dist/10.11/BrowseModes
+          cp plugin/Jellyfin.Plugin.BrowseModes.10_11/bin/Release/net9.0/*.dll dist/10.11/BrowseModes/
+          sed "s/__VERSION__/$VERSION/; s/__TIMESTAMP__/$(date -u +%Y-%m-%dT%H:%M:%SZ)/" \
+            plugin/Jellyfin.Plugin.BrowseModes.10_11/meta.template.json > dist/10.11/BrowseModes/meta.json
+          cd dist/10.11/BrowseModes && zip -r ../../browse-modes_${VERSION}_10.11.zip . && cd ../../..
+          echo "checksum=$(md5sum dist/browse-modes_${VERSION}_10.11.zip | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      # ── Report ────────────────────────────────────────────────────────
+
+      - name: Report checksums
         run: |
           echo "### Plugin ${{ steps.version.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "md5: \`${{ steps.package.outputs.checksum }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "12.x:  \`${{ steps.package-12.outputs.checksum }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "10.11: \`${{ steps.package-10_11.outputs.checksum }}\`" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         with:
