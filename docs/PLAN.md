@@ -132,4 +132,4 @@ matching items appear.
 | 2026-08-03 | — | Plan created |
 | 2026-08-03 | 1a+1b | Removed 4 tiles + renamed 2. Both codebases updated, built, pushed |
 | 2026-08-03 | 1c | Reordered tiles to match spec. Both codebases updated, built, pushed |
-| 2026-08-03 | 4 | Tag infrastructure + 5 new browse modes. AI-classified 92K TMDb keywords into Mood/StoryThemes/PlotElements/Worlds/Styles. Infinite-scroll pickers. Both codebases built + deployed |
+| 2026-08-03 | 4 | Tag infrastructure + 5 new browse modes. AI-classified 92K TMDb keywords. Infinite-scroll ribbon shelves with sort/shuffle. Grid/shelf toggle. 9-month date cutoffs on New Releases and Just Added. Both codebases built, deployed, released as v2.0.0 |

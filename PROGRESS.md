@@ -13,9 +13,53 @@ Design rationale and the architecture decision live in [docs/TECHNICAL.md](./doc
 | 4. CI and release artifacts | ✅ v1.0.1.0 released |
 | 5. Deploy to production | ✅ live on the real server, all three clients |
 
-**Next session:** see [docs/NEXT-SESSION.md](./docs/NEXT-SESSION.md) — v2.0 refactor, Chunk 1d/1e (toggles).
+**Next session:** see [docs/NEXT-SESSION.md](./docs/NEXT-SESSION.md) — Chunk 3 (Vault) or Chunk 5 (Polish).
 
-## 2026-08-03
+## 2026-08-03 (continued — v2.0 release)
+
+### Tag-based discovery — DONE
+
+Five new browse modes backed by TMDb keywords stored as Jellyfin tags:
+
+- **😊 Mood** — emotional/aesthetic qualities (suspenseful, heartwarming, whimsical…)
+- **🎬 Story Themes** — narrative topics (time travel, heist, revenge…)
+- **📋 Plot Elements** — story mechanics (based on a true story, unreliable narrator…)
+- **🌍 Worlds** — settings and time periods (new york city, 1950s, medieval, space…)
+- **🎨 Styles** — filmmaking techniques (stop motion, film noir, anime, musical…)
+
+Each opens as stacked horizontal poster shelves (following the `GenresSectionContainer`
+pattern), with a sort dropdown (Random, A–Z, Z–A, Most/Fewest items), a shuffle button,
+and a grid/shelf view toggle. Only tags with matching items in the library appear.
+
+Curated tag lists stored as TS constants in `browseTags.ts` — 9,700 keywords
+AI-classified from the official TMDb daily keyword export (`keyword_ids_MM_DD_YYYY.json.gz`,
+92,533 total).
+
+### Date cutoffs — DONE
+
+New Releases and Just Added now limited to last 9 months:
+- New Releases: `MinPremiereDate` (12.x and 10.11)
+- Just Added: `MinDateLastSaved` (12.x and 10.11)
+
+Required adding `MinPremiereDate`/`MinDateLastSaved` to `LibraryViewSettings` and
+`getFiltersQuery` in `utils/items.ts`. 10.11 already had `MinPremiereDate` from the
+backport; 12.x got both in this session.
+
+### v2.0.0 release — DONE
+
+GitHub release created with plugin zip (426K) and web bundle zip (~26MB). Manifest
+updated for the Jellyfin plugin catalog. Docs updated with apt install instructions,
+current tile inventory, and CONTEXT.md glossary.
+
+Deployed to real server (apt-based) and verified working.
+
+### Infrastructure
+
+- `docs/CONTEXT.md` — domain glossary
+- `scripts/classify_keywords.py` — TMDb keyword classification pipeline
+- Root `.gitignore` for toolchain and session files
+
+## 2026-08-03 (morning)
 
 ### Web client backported to Jellyfin 10.11 — DONE
 
