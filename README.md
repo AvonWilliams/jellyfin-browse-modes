@@ -4,8 +4,9 @@ Open a Movies or TV library in Jellyfin and you land in one long alphabetical li
 know what you want; not much help if you don't.
 
 Browse Modes puts a menu in front of that list — a grid of tiles, each a different way in:
-**Just Added**, **Random**, **Unwatched**, **Best Unseen**, **Trending**, **Top Rated**,
-**Genres**, **Studios**, **Critics' Picks**, and more.
+**Trending**, **Top Rated**, **Mood**, **Genres**, **Story Themes**, **Worlds**, **Hidden Gems**,
+**Just Added**, **Random**, and more. Tag-based discovery categories show stacked poster shelves
+with sort, shuffle, and grid/shelf toggle controls.
 
 Nothing is hidden. The first tile, **All**, is the ordinary list exactly as it was.
 

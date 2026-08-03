@@ -25,29 +25,41 @@ Nothing is hidden. The first tile, **All**, is the ordinary list exactly as it w
 
 ## The tiles
 
+### Discovery
+
 | Tile | Shows you |
 |---|---|
 | **All** | Everything, as normal |
-| **Unwatched** | Only things you haven't seen |
-| **Just Added** | Newest arrivals in your library first |
-| **Best Unseen** | Highest-rated things you haven't watched yet |
-| **Random** | Shuffled, for when you can't decide |
-| **Favorites** | Things you've hearted |
-| **Genres** | Grouped by genre |
-| **Highest Rated** | Best community ratings first |
-| **Top Rated** | The all-time greats (from TMDB) that you own |
 | **Trending** | What's popular worldwide right now, that you own |
+| **Top Rated** | The all-time greats (from TMDb) that you own |
+| **Genres** | Grouped by genre |
+| **😊 Mood** | Browse by emotional and aesthetic qualities — *suspenseful, heartwarming, whimsical…* |
+| **🎬 Story Themes** | Browse by narrative topic — *time travel, heist, revenge, coming of age…* |
+| **📋 Plot Elements** | Browse by story mechanics — *based on a true story, unreliable narrator, road trip…* |
+| **🌍 Worlds** | Browse by setting and time period — *new york city, 1950s, medieval, space…* |
+| **🎨 Styles** | Browse by filmmaking style — *stop motion, film noir, anime, musical, satire…* |
+| **💎 Hidden Gems** | Highest-rated things you haven't watched yet |
+| **Random** | Shuffled, for when you can't decide |
+
+### Library tools
+
+| Tile | Shows you |
+|---|---|
+| **Just Added** | Newest arrivals in your library first |
 | **New Releases** | Newest by release date, not by when you added it |
+| **Critics' Picks** | Best critic scores |
+| **Watch Again** | What you watched most recently |
+| **Decades** | Pick a decade, then browse it |
 | **Studios** / **Networks** | Grouped by studio, or by network for TV |
-| **Recently Played** | What you watched most recently |
-| **Critics' Picks** | Best critic scores *(films only)* |
-| **Longest** | Longest runtime first |
-| **Decades** | Pick a decade, then browse it *(web and phone only)* |
-| **Age Rating** | Pick a rating, then browse it *(web and phone only)* |
+| **Age Rating** | Pick a rating, then browse it |
+
+The five discovery categories (Mood, Story Themes, Plot Elements, Worlds, Styles) show stacked
+horizontal shelves of posters. A sort dropdown lets you choose between random, alphabetical, and
+by-item-count ordering, and a shuffle button re-randomises on demand. A toggle switches between
+the shelf view and a compact tile picker.
 
 **Trending** and **Top Rated** put a small numbered badge on each poster. That number is the
-title's position in TMDB's worldwide ranking — a badge reading `28` means it's the 28th most
-popular film right now and you happen to own it. It is not a ranking of your library.
+title's position in TMDb's worldwide ranking — it is not a ranking of your library.
 
 Each tile remembers its own sort order. If you change the sort inside **Just Added**, your normal
 library view is left alone.
@@ -64,7 +76,9 @@ The phone app is really a web browser in disguise: it loads its screens from the
 picks up the change for free. The TV app is a completely separate piece of software that only
 asks the server for data and draws everything itself — which is why it needs its own install.
 
-Two tiles (**Decades** and **Age Rating**) aren't on the TV app yet.
+The new tag-based discovery tiles (Mood, Story Themes, etc.) depend on items having TMDb keywords
+stored as Jellyfin tags, which comes automatically from the standard metadata scanners. No extra
+setup needed.
 
 ---
 
@@ -101,17 +115,58 @@ just come up empty.
 
 ### Step 3: Install the web interface
 
-Download `jellyfin-web-browse-modes.zip` from the Releases page and unpack it over your server's
-web folder. For the official Docker image that's `/jellyfin/jellyfin-web`:
+Download `jellyfin-web-browse-modes.zip` from the [Releases page](../../releases) and unpack it
+over your server's web folder.
+
+#### Docker
 
 ```bash
+unzip jellyfin-web-browse-modes.zip
 docker cp dist/. <your-container>:/jellyfin/jellyfin-web/
 ```
 
-If you run Jellyfin without Docker, it's wherever `--webdir` points, typically
-`/usr/share/jellyfin/web`.
+The web root is baked into the image. Recreating the container or pulling a newer Jellyfin image
+silently restores the stock client — to make it stick, bind-mount the unpacked dist over the web
+root rather than copying it:
 
-> Note this is undone if you recreate the container or update Jellyfin — you'd need to repeat it.
+```
+-v /path/to/dist:/jellyfin/jellyfin-web:ro
+```
+
+#### Native Linux (apt / deb)
+
+The web root is `/usr/share/jellyfin/web`. Replace it with the downloaded bundle:
+
+```bash
+unzip jellyfin-web-browse-modes.zip
+sudo cp -a /usr/share/jellyfin/web /usr/share/jellyfin/web.bak   # backup the stock client
+sudo cp -a dist/. /usr/share/jellyfin/web/
+```
+
+A `jellyfin-web` package update will replace the web folder and remove the tiles. To prevent
+that:
+
+```bash
+sudo apt-mark hold jellyfin-web
+```
+
+When you want to upgrade Jellyfin itself, unhold, upgrade, re-apply the bundle, and re-hold:
+
+```bash
+sudo apt-mark unhold jellyfin-web
+sudo apt upgrade
+# re-copy the latest dist bundle into /usr/share/jellyfin/web/
+sudo apt-mark hold jellyfin-web
+```
+
+Alternatively, replace the web directory with a symlink to a persistent location so upgrades
+leave it alone:
+
+```bash
+sudo mv /usr/share/jellyfin/web /opt/jellyfin-web
+sudo ln -s /opt/jellyfin-web /usr/share/jellyfin/web
+# unpack new dist bundles into /opt/jellyfin-web/
+```
 
 ### Step 4: Hard-refresh your browser
 

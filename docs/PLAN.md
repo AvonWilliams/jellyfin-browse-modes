@@ -41,14 +41,17 @@ Files: new route/page, `browse/index.tsx` (add "More" tile), TV `BrowseModesFrag
 
 Files: new Vault components, `browseModes.ts`, possibly plugin endpoints
 
-## Chunk 4: Hard — Mood & Story Themes
+## Chunk 4: Hard — Mood & Story Themes ✅
 
-⬜ **4a. Tag infrastructure** — How to map moods/themes to actual items. Options:
-- TMDb keywords API (needs per-item lookup, heavy on API calls)
-- Genre→mood mapping (e.g. Comedy+Romance → "Feel Good")
-- User-managed tags (manual, but no external dependencies)
-⬜ **4b. Mood picker** — Randomized subset, weighted probabilities  
-⬜ **4c. Story Themes picker** — Same pattern, larger list
+✅ **4a. Tag infrastructure** — Downloaded official TMDb keyword export (92,533 keywords),
+AI-classified into 5 categories (mood: 510, theme: 1,517, plot: 1,749, world: 1,975,
+style: 627). Stored as TypeScript constants in `browseTags.ts`. At render time,
+`filters.Tags` from the API is intersected against the curated lists — only tags with
+matching items appear.
+
+✅ **4b. Mood picker** — `BrowseMode.Mood` tile with randomized infinite-scroll picker.
+✅ **4c. Story Themes picker** — Same pattern.
+✅ **Bonus: 3 additional categories** — Plot Elements, Worlds, Styles.
 
 ## Chunk 5: Polish
 
@@ -60,34 +63,44 @@ Files: new Vault components, `browseModes.ts`, possibly plugin endpoints
 
 ## Current tile inventory (post-Chunk 1)
 
-### Movies (13 tiles)
+### Movies (18 tiles)
 1. All
 2. Trending
 3. Top Rated
 4. Genres
-5. Hidden Gems
-6. Just Added
-7. New Releases
-8. Random
-9. Critics' Picks
-10. Watch Again
-11. Decades
-12. Studios
-13. Age Rating
+5. 😊 Mood
+6. 🎬 Story Themes
+7. 📋 Plot Elements
+8. 🌍 Worlds
+9. 🎨 Styles
+10. Hidden Gems
+11. Just Added
+12. New Releases
+13. Random
+14. Critics' Picks
+15. Watch Again
+16. Decades
+17. Studios
+18. Age Rating
 
-### TV Shows (12 tiles)
+### TV Shows (17 tiles)
 1. All
 2. Trending
 3. Top Rated
 4. Genres
-5. Hidden Gems
-6. Just Added
-7. New Releases
-8. Random
-9. Watch Again
-10. Decades
-11. Networks
-12. Age Rating
+5. 😊 Mood
+6. 🎬 Story Themes
+7. 📋 Plot Elements
+8. 🌍 Worlds
+9. 🎨 Styles
+10. Hidden Gems
+11. Just Added
+12. New Releases
+13. Random
+14. Watch Again
+15. Decades
+16. Networks
+17. Age Rating
 
 ---
 
@@ -119,3 +132,4 @@ Files: new Vault components, `browseModes.ts`, possibly plugin endpoints
 | 2026-08-03 | — | Plan created |
 | 2026-08-03 | 1a+1b | Removed 4 tiles + renamed 2. Both codebases updated, built, pushed |
 | 2026-08-03 | 1c | Reordered tiles to match spec. Both codebases updated, built, pushed |
+| 2026-08-03 | 4 | Tag infrastructure + 5 new browse modes. AI-classified 92K TMDb keywords into Mood/StoryThemes/PlotElements/Worlds/Styles. Infinite-scroll pickers. Both codebases built + deployed |
