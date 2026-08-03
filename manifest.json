@@ -9,6 +9,14 @@
         "imageUrl": "",
         "versions": [
             {
+                "version": "2.0.0.0",
+                "changelog": "Tag-based discovery: Mood, Story Themes, Plot Elements, Worlds, Styles. Ribbon shelves with sort/shuffle. 9-month date cutoffs on New Releases and Just Added.",
+                "targetAbi": "12.0.0.0",
+                "sourceUrl": "https://github.com/AvonWilliams/jellyfin-browse-modes/releases/download/v2.0.0/browse-modes_2.0.0_12.x.zip",
+                "checksum": "4dda6b2ade0b7a7014005d062c1c2e2b",
+                "timestamp": "2026-08-03T20:41:00Z"
+            },
+            {
                 "version": "1.0.2.1",
                 "changelog": "Fix: handle empty TMDb API key gracefully. TMDbLib 3.0.0 throws on empty keys; the client is now created lazily.",
                 "targetAbi": "10.11.0.0",
