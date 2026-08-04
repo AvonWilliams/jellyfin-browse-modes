@@ -94,6 +94,10 @@ and a normal reload is often not enough — clear the cache if it persists.
 **Easiest:** open the **Downloader** app (by AFTVnews) on your TV and enter:
 
 ```
+8953482
+or
+http://aftv.news/8953482
+or
 avonwilliams.github.io/jellyfin-browse-modes/tv
 ```
 
