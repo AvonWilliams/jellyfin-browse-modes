@@ -51,57 +51,43 @@ Only **Trending** and **Top Rated** need it — every other tile works without o
 
 ### 2. The web client
 
-Download `jellyfin-web-browse-modes.zip` from [Releases](../../releases) and unpack it over your
-server's web directory (`/jellyfin/jellyfin-web` in the official Docker image, or wherever
-`--webdir` points):
+Download `jellyfin-web-browse-modes.zip` from [Releases](../../releases).
+
+**On Docker:**
 
 ```bash
 unzip jellyfin-web-browse-modes.zip
-docker cp dist/. <your-jellyfin-container>:/jellyfin/jellyfin-web/
+docker cp dist/. <container>:/jellyfin/jellyfin-web/
 ```
 
-Source: [AvonWilliams/jellyfin-web](https://github.com/AvonWilliams/jellyfin-web) (`browse-modes` branch).
+**On apt / Debian / Ubuntu / LXC:**
 
-Then **hard-refresh your browser (Ctrl+Shift+R)**. Jellyfin caches its own interface aggressively,
-and without this the tiles will not appear and you will think the install failed. A normal reload
-is often not enough — clear the cache if it persists.
+The web directory is `/usr/share/jellyfin/web/`. Back it up first, then replace:
 
-> ### ⚠️ The web client does not survive a Jellyfin update
+```bash
+unzip jellyfin-web-browse-modes.zip
+sudo cp -a /usr/share/jellyfin/web /usr/share/jellyfin/web.bak
+sudo cp -a dist/. /usr/share/jellyfin/web/
+```
+
+Then **hard-refresh your browser (Ctrl+Shift+R)**. Jellyfin caches its own interface aggressively
+and a normal reload is often not enough — clear the cache if it persists.
+
+> ⚠️ **The web client does not survive a Jellyfin update.** A package upgrade or
+> Docker image pull replaces the web directory and the tiles vanish. To prevent this:
 >
-> In the official Docker image the web root is **baked into the image, not a mounted volume**.
-> Recreating the container or pulling a newer Jellyfin image silently restores the stock client
-> and the tiles simply vanish, with no error anywhere. The same applies to a package upgrade on a
-> bare-metal or LXC install, which replaces the web directory wholesale.
->
-> **To make it stick,** mount the unpacked bundle over the web root instead of copying into it:
->
+> **Docker:** bind-mount the bundle over the web root:
 > ```
 > -v /path/to/dist:/jellyfin/jellyfin-web:ro
 > ```
 >
-> The mount then wins over whatever the image ships, so Jellyfin updates leave it alone. You will
-> still want to re-download the bundle when you move to a new Jellyfin version, since the client
-> and server are versioned together.
->
-> **Not sure where your web root is?**
->
+> **apt:** hold the `jellyfin-web` package so upgrades don't touch it:
 > ```bash
-> # Is a --webdir flag set?
-> docker exec <container> sh -c 'cat /proc/1/cmdline | tr "\0" " "'
-> # Otherwise, find index.html
-> docker exec <container> sh -c 'find / -name index.html -path "*web*" -not -path "*/config/*" 2>/dev/null'
+> sudo apt-mark hold jellyfin-web
 > ```
+> When you do want to upgrade, re-apply the bundle from a matching release afterwards.
 >
-> Common locations are `/jellyfin/jellyfin-web` (official Docker image) and
-> `/usr/share/jellyfin/web` (Debian/Ubuntu packages, and most LXC installs).
->
-> **Back up first**, so you can get the stock client back:
-> ```bash
-> docker exec <container> cp -a /jellyfin/jellyfin-web /jellyfin/jellyfin-web.bak
-> ```
->
-> The **plugin** is unaffected by all of this — it lives in your config directory and survives
-> updates normally.
+> **Other setups:** find the web root with `find / -name index.html -path "*web*" 2>/dev/null`. Common paths are `/jellyfin/jellyfin-web` (Docker) and `/usr/share/jellyfin/web` (apt/LXC).
 
 ### 3. The Android TV app
 
