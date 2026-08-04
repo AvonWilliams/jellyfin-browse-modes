@@ -105,11 +105,19 @@ is often not enough — clear the cache if it persists.
 
 ### 3. The Android TV app
 
-Download the APK from [Releases](../../releases) and sideload it:
+**Easiest:** open the **Downloader** app (by AFTVnews) on your TV and enter:
+
+```
+avonwilliams.github.io/jellyfin-browse-modes/tv
+```
+
+This redirects straight to the latest APK. No typing long URLs.
+
+**Or sideload manually:**
 
 ```bash
 adb connect <TV-IP>:5555
-adb install -r jellyfin-androidtv-browse-modes-1.0.0-debug.apk
+adb install -r jellyfin-androidtv-v0.0.0-dev.1-debug.apk
 ```
 
 Full step-by-step instructions, including enabling ADB on the TV, are in the
