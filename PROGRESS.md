@@ -13,7 +13,43 @@ Design rationale and the architecture decision live in [docs/TECHNICAL.md](./doc
 | 4. CI and release artifacts | ✅ v1.0.1.0 released |
 | 5. Deploy to production | ✅ live on the real server, all three clients |
 
-**Next session:** see [docs/NEXT-SESSION.md](./docs/NEXT-SESSION.md) — Chunk 3 (Vault) or Chunk 5 (Polish).
+**Next session:** [Android TV port](#2026-08-04---android-tv-v20-port) — wire up date cutoffs, build and test.
+
+## 2026-08-04 — Android TV v2.0 port
+
+### Tile cleanup, date cutoffs, 5 tag-based modes — DONE (untested)
+
+Ported the v2.0 features from jellyfin-web to jellyfin-androidtv (`browse-modes` branch):
+
+- **Tile cleanup:** Removed Highest Rated, Longest, Favorites, Unwatched. Renamed
+  Best Unseen → Hidden Gems, Recently Played → Watch Again. Reordered to match web spec.
+- **Date cutoffs:** Added `minDateLastSaved`/`minPremiereDate` to `BrowsePreset` and
+  `LibraryPreferences`, seeded as 9-month windows for Just Added/New Releases.
+  ⚠️ The query-level wiring (applying these to `GetItemsRequest`) still needs to be
+  found and connected.
+- **5 tag-based modes:** Mood, Story Themes, Plot Elements, Worlds, Styles. Each opens
+  `TagPickerFragment` — a grid of curated tags intersected with the library's available
+  tags. Tag → `TagItemsFragment` shows matching items.
+- **Curated tag lists:** `browseTags.ts` (6,378 tags) converted to Kotlin in
+  `BrowseTags.kt`.
+- **New icons:** 5 vector drawables (mood, book, timeline, world, palette).
+- **15 files changed/created** — see `docs/ANDROID-TV-V2-PORT-2026-08-04.md` for
+  the full inventory.
+
+⚠️ **Not built.** The Android SDK toolchain is not available in this environment.
+Expected to need minor fixes (SDK type availability, imports) on first build.
+
+### Known issues for next session
+
+1. **Date cutoff plumbing** — `GetItemsRequest` builder needs to read and apply the
+   new `filterMinDateLastSaved`/`filterMinPremiereDate` preferences. Without this the
+   9-month cutoffs won't work.
+2. **Stale locale strings** — `lbl_unwatched`/`lbl_favorites` still in locale files.
+   Dead resources, harmless.
+3. **TagPicker card sizing** — tag names are longer than studio names; column count
+   or height may need adjusting after TV testing.
+4. **Ribbon shelves (Chunk 5c)** deferred — tag modes use grid picker for now.
+5. **Decades / Age Rating** not yet ported to Android TV.
 
 ## 2026-08-03 (continued — v2.0 release)
 
