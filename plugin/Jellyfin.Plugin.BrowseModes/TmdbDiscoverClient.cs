@@ -22,6 +22,11 @@ public sealed class TmdbDiscoverClient : IDisposable
     private readonly MemoryCache _memoryCache = new MemoryCache(new MemoryCacheOptions());
     private TMDbClient? _tmDbClient;
 
+    // Per-studio data (name → count), populated by scheduled task or lazily by the controller.
+    private Dictionary<string, int>? _studioCounts;
+    private DateTime _studioCountsLastRefreshed = DateTime.MinValue;
+    private static readonly TimeSpan StudioCountsCacheDuration = TimeSpan.FromHours(24);
+
     /// <summary>
     /// Initializes a new instance of the <see cref="TmdbDiscoverClient"/> class.
     /// </summary>
@@ -160,6 +165,28 @@ public sealed class TmdbDiscoverClient : IDisposable
         await GetTrendingSeriesIdsAsync(TimeWindow.Week, pages, cancellationToken).ConfigureAwait(false);
         await GetTopRatedMovieIdsAsync(pages, cancellationToken).ConfigureAwait(false);
         await GetTopRatedSeriesIdsAsync(pages, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Gets cached per-studio item counts, or null if the cache is stale or empty.
+    /// </summary>
+    public IReadOnlyDictionary<string, int>? GetStudioCounts()
+    {
+        if (_studioCounts is not null && DateTime.UtcNow - _studioCountsLastRefreshed < StudioCountsCacheDuration)
+        {
+            return _studioCounts;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Stores per-studio item counts in the cache, overwriting any previous entry.
+    /// </summary>
+    public void SetStudioCounts(Dictionary<string, int> counts)
+    {
+        _studioCounts = counts;
+        _studioCountsLastRefreshed = DateTime.UtcNow;
     }
 
     /// <inheritdoc />

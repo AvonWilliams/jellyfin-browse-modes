@@ -324,6 +324,138 @@ public class DiscoverController : ControllerBase
         return Ok(new QueryResult<BaseItemDto>(dtos));
     }
 
+    /// <summary>
+    /// Gets available studios by extracting them from item metadata.
+    /// </summary>
+    /// <remarks>
+    /// On Jellyfin 12.x, studios are materialized as entities and the standard /Studios API works.
+    /// On 10.11, studios only exist as metadata strings, so we aggregate them here. This endpoint
+    /// works on both versions.
+    /// </remarks>
+    /// <param name="parentId">Optional. Specify this to localize the search to a specific library.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <response code="200">Studio items returned.</response>
+    /// <returns>Studio items with generated IDs and item counts.</returns>
+    [HttpGet("Studios")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult<QueryResult<BaseItemDto>> GetStudios(
+        [FromQuery] Guid? parentId,
+        CancellationToken cancellationToken = default)
+    {
+        var counts = GetOrBuildStudioCounts(parentId);
+        var items = new List<BaseItemDto>(counts.Count);
+        foreach (var (name, count) in counts)
+        {
+            items.Add(new BaseItemDto
+            {
+                Name = name,
+                Id = StudioNameToGuid(name),
+                ChildCount = count
+            });
+        }
+
+        return Ok(new QueryResult<BaseItemDto>(items));
+    }
+
+    /// <summary>
+    /// Gets per-studio item counts, cached for 24 hours.
+    /// </summary>
+    /// <param name="parentId">Optional. Specify this to localize the search to a specific library.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <response code="200">Studio counts returned.</response>
+    /// <returns>A map of studio name to item count.</returns>
+    [HttpGet("StudioCounts")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult<Dictionary<string, int>> GetStudioCounts(
+        [FromQuery] Guid? parentId,
+        CancellationToken cancellationToken = default)
+    {
+        return Ok(GetOrBuildStudioCounts(parentId));
+    }
+
+    /// <summary>
+    /// Builds studio name → count by enumerating items and reading their studio metadata.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="ILibraryManager.GetStudios"/> depends on materialized Studio entities, which
+    /// only exist in Jellyfin 12.x. On 10.11, studios are metadata strings on the items
+    /// themselves, so this method extracts them directly instead.
+    /// </remarks>
+    private Dictionary<string, int> GetOrBuildStudioCounts(Guid? parentId)
+    {
+        var cached = _discoverClient.GetStudioCounts();
+        if (cached is not null)
+        {
+            // cached is IReadOnlyDictionary; copy to mutable for consistency.
+            return new Dictionary<string, int>(cached, StringComparer.OrdinalIgnoreCase);
+        }
+
+        var query = new InternalItemsQuery
+        {
+            IncludeItemTypes = [BaseItemKind.Movie, BaseItemKind.Series],
+            Recursive = true
+        };
+
+        if (parentId.HasValue && !parentId.Value.IsEmpty())
+        {
+            query.ParentId = parentId.Value;
+        }
+
+        var items = _libraryManager.GetItemList(query);
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in items)
+        {
+            // BaseItem.Studios is string[] on both 10.11 and 12.x.
+            var studios = item.Studios;
+            if (studios is null || studios.Length == 0)
+            {
+                continue;
+            }
+
+            foreach (var studio in studios)
+            {
+                if (string.IsNullOrWhiteSpace(studio))
+                {
+                    continue;
+                }
+
+                counts.TryGetValue(studio, out var current);
+                counts[studio] = current + 1;
+            }
+        }
+
+        _discoverClient.SetStudioCounts(counts);
+        return counts;
+    }
+
+    /// <summary>
+    /// Generates a deterministic <see cref="Guid"/> from a studio name.
+    /// </summary>
+    /// <remarks>
+    /// The same name always produces the same id, so the client can use these ids for sorting
+    /// and filtering without them changing between restarts.
+    /// </remarks>
+    private static Guid StudioNameToGuid(string name)
+    {
+        Span<byte> hash = stackalloc byte[16];
+        var input = System.Text.Encoding.UTF8.GetBytes(name);
+        // Simple FNV-1a-like hash into 16 bytes — good enough for a deterministic Guid.
+        uint h = 2166136261;
+        foreach (var b in input)
+        {
+            h ^= b;
+            h *= 16777619;
+        }
+
+        // Seed the Guid bytes with the hash and the name bytes for uniqueness.
+        for (var i = 0; i < 16; i++)
+        {
+            hash[i] = (byte)(input.Length > i ? input[i] ^ (byte)(h >> ((i % 4) * 8)) : (byte)(h >> ((i % 4) * 8)));
+        }
+
+        return new Guid(hash);
+    }
+
     private static int GetRank(BaseItem item, Dictionary<string, int> rankByTmdbId)
     {
         return item.TryGetProviderId(MetadataProviders.Tmdb, out var tmdbId)
