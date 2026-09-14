@@ -51,13 +51,18 @@ Only **Trending** and **Top Rated** need it — every other tile works without o
 
 ### 2. The web client
 
-Download `jellyfin-web-browse-modes.zip` from [Releases](../../releases).
+Download the latest `jellyfin-web-browse-modes-<version>.zip` from [Releases](../../releases).
+At the time of writing the file is `jellyfin-web-browse-modes-2.0.0.zip`. Pick the newest one.
+
+The zip extracts its files at the top level (no `dist/` wrapper), so unzip into a fresh directory
+before copying — otherwise the cp will fail with "no such file or directory".
 
 **On Docker:**
 
 ```bash
-unzip jellyfin-web-browse-modes.zip
-docker cp dist/. <container>:/jellyfin/jellyfin-web/
+mkdir -p /tmp/jbm && unzip -d /tmp/jbm jellyfin-web-browse-modes-2.0.0.zip
+docker cp /tmp/jbm/. <container>:/jellyfin/jellyfin-web/
+sudo rm -rf /tmp/jbm
 ```
 
 **On apt / Debian / Ubuntu / LXC:**
@@ -65,9 +70,10 @@ docker cp dist/. <container>:/jellyfin/jellyfin-web/
 The web directory is `/usr/share/jellyfin/web/`. Back it up first, then replace:
 
 ```bash
-unzip jellyfin-web-browse-modes.zip
 sudo cp -a /usr/share/jellyfin/web /usr/share/jellyfin/web.bak
-sudo cp -a dist/. /usr/share/jellyfin/web/
+mkdir -p /tmp/jbm && unzip -d /tmp/jbm jellyfin-web-browse-modes-2.0.0.zip
+sudo cp -a /tmp/jbm/. /usr/share/jellyfin/web/
+sudo rm -rf /tmp/jbm
 ```
 
 Then **hard-refresh your browser (Ctrl+Shift+R)**. Jellyfin caches its own interface aggressively
@@ -107,7 +113,7 @@ This redirects straight to the latest APK. No typing long URLs.
 
 ```bash
 adb connect <TV-IP>:5555
-adb install -r jellyfin-androidtv-v0.0.0-dev.1-debug.apk
+adb install -r jellyfin-androidtv/app/build/outputs/apk/debug/jellyfin-androidtv-v*-debug.apk
 ```
 
 Full step-by-step instructions, including enabling ADB on the TV, are in the
@@ -123,7 +129,7 @@ working. Source: [AvonWilliams/jellyfin-androidtv](https://github.com/AvonWillia
 |---|---|
 | [User guide](docs/USER-GUIDE.md) | What each tile does, install walkthrough, troubleshooting |
 | [Technical reference](docs/TECHNICAL.md) | Every deviation from stock Jellyfin, and how to re-apply it to a new Jellyfin release |
-| [10.11 back-port scoping](docs/BACKPORT-10.11.md) | What it would take to support the stable channel. Parked, not started |
+| [10.11 back-port scoping](docs/BACKPORT-10.11.md) | What the 10.11 backport involved. Done August 2026 |
 
 ## Building from source
 
@@ -136,14 +142,14 @@ You do not need to build anything — releases carry prebuilt artifacts. If you 
 the server's `ItemSortBy` enum, which is compiled and closed — a plugin cannot extend it, and
 keeping it would have meant forking the server. Dropping one tile was the better trade.
 
-**Decades** and **Age Rating** exist on web but not yet on the TV app.
+**Decades** and **Age Rating** are on both web and TV. **Vault** (multi-level discovery hub) is deferred.
 
 ## Compatibility
 
 Built against **Jellyfin 12.0-rc3** and **Jellyfin 10.11.11** (plugin only). Android TV: **0.19.9**.
 
-> **The plugin works on both 10.11.x (stable) and 12.x.** The web client currently targets 12.x
-> only — a 10.11 web backport is scoped but not built. See the
+> **The plugin works on both 10.11.x (stable) and 12.x.** Both web and TV clients target
+> 10.11 and 12.x. The 10.11 web backport lives on the `browse-modes-10.11` branch. See the
 > [back-port scoping](docs/BACKPORT-10.11.md) for details. A Jellyfin update will
 overwrite the web build, and the TV app will not auto-update — see the technical reference for
 how to re-apply to a newer release.
