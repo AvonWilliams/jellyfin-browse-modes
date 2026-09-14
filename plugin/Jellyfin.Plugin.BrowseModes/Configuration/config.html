@@ -2,11 +2,45 @@
 <html lang="en">
 <head>
     <title>Browse Modes</title>
+    <style>
+        .tileEditorRow {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 0;
+        }
+        .tileEditorRow button {
+            min-width: 34px;
+        }
+    </style>
 </head>
 <body>
 <div id="BrowseModesConfigPage" data-role="page" class="page type-interior pluginConfigurationPage">
     <div data-role="content">
         <div class="content-primary">
+            <div style="margin-bottom:1.5em; line-height:1.6;">
+                <p>
+                    Browse Modes replaces the single alphabetical list you normally see when opening
+                    a library with a grid of discovery tiles — each a different way in:
+                    Trending, Top Rated, Mood, Genres, Story Themes, Hidden Gems, Just Added, Random,
+                    and more. The first tile, All, is your original list exactly as it was.
+                </p>
+                <p>
+                    <strong>Only Trending and Top Rated need this plugin.</strong>
+                    Every other tile is a plain sort or filter the server already serves — the plugin
+                    fetches the TMDb lists that power those two modes and keeps them cached so they
+                    load instantly.
+                </p>
+                <p>
+                    The tile grid itself is part of the client (web or Android TV), not the plugin.
+                    See the <a href="https://github.com/AvonWilliams/jellyfin-browse-modes" target="_blank" rel="noopener">project README</a> for client install instructions.
+                </p>
+                <p style="margin-top:1em;">
+                    <strong>Scheduled tasks:</strong> "Refresh TMDb discover lists" (every 4 hours).
+                    Can be triggered manually from Dashboard → Scheduled Tasks.
+                </p>
+            </div>
+
             <form id="BrowseModesConfigForm">
                 <div class="inputContainer">
                     <label class="inputLabel inputLabelUnfocused" for="TmdbApiKey">TMDb API key</label>
@@ -34,6 +68,33 @@
                     </div>
                 </div>
 
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="TrendingMaxRank">Trending rank limit</label>
+                    <input id="TrendingMaxRank" name="TrendingMaxRank" type="number" min="0" max="1000" step="1" is="emby-input" />
+                    <div class="fieldDescription">
+                        Only show titles in the top N positions of TMDb's trending list. Position is
+                        1-based: 50 keeps ranks 1–50 and drops anything lower. Leave 0 for no limit.
+                    </div>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="TopRatedMaxRank">Top Rated rank limit</label>
+                    <input id="TopRatedMaxRank" name="TopRatedMaxRank" type="number" min="0" max="1000" step="1" is="emby-input" />
+                    <div class="fieldDescription">
+                        Only show titles in the top N positions of TMDb's top rated list. Leave 0
+                        for no limit.
+                    </div>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused">Browse mode tiles</label>
+                    <div class="fieldDescription">
+                        Reorder the tiles with the arrows and uncheck any you want hidden. The web
+                        client applies this order. All is your original list.
+                    </div>
+                    <div id="TileEditor"></div>
+                </div>
+
                 <div>
                     <button is="emby-button" type="submit" class="raised button-submit block emby-button">
                         <span>Save</span>
@@ -47,6 +108,101 @@
         (function () {
             var pluginId = '0d5f6a1e-3b7c-4c62-9a4d-2e8f1b6c9a37';
 
+            // Keys are the web client's BrowseMode enum values; labels are for this editor only.
+            var ALL_MODES = [
+                { key: 'all', label: 'All' },
+                { key: 'newreleases', label: 'New Releases' },
+                { key: 'justadded', label: 'Just Added' },
+                { key: 'trending', label: 'Trending' },
+                { key: 'toprated', label: 'Top Rated' },
+                { key: 'genres', label: 'Genres' },
+                { key: 'decades', label: 'Decades' },
+                { key: 'criticspicks', label: "Critics' Picks" },
+                { key: 'bestunseen', label: 'Hidden Gems' },
+                { key: 'mood', label: 'Mood' },
+                { key: 'storythemes', label: 'Story Themes' },
+                { key: 'plotelements', label: 'Plot Elements' },
+                { key: 'worlds', label: 'Worlds' },
+                { key: 'styles', label: 'Styles' },
+                { key: 'random', label: 'Random' },
+                { key: 'recentlyplayed', label: 'Watch Again' },
+                { key: 'studios', label: 'Studios / Networks' },
+                { key: 'agerating', label: 'Age Rating' }
+            ];
+
+            // The editor's working state: every mode, in display order, with an enabled flag.
+            var modes = [];
+
+            function renderTileEditor() {
+                var container = document.querySelector('#TileEditor');
+                container.innerHTML = '';
+
+                modes.forEach(function (entry, index) {
+                    var row = document.createElement('div');
+                    row.className = 'tileEditorRow';
+
+                    var up = document.createElement('button');
+                    up.type = 'button';
+                    up.textContent = '↑';
+                    up.disabled = index === 0;
+                    up.addEventListener('click', function () { moveMode(index, -1); });
+
+                    var down = document.createElement('button');
+                    down.type = 'button';
+                    down.textContent = '↓';
+                    down.disabled = index === modes.length - 1;
+                    down.addEventListener('click', function () { moveMode(index, 1); });
+
+                    var checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.checked = entry.enabled;
+                    checkbox.addEventListener('change', function () { entry.enabled = checkbox.checked; });
+
+                    var label = document.createElement('span');
+                    label.textContent = entry.label;
+
+                    row.appendChild(up);
+                    row.appendChild(down);
+                    row.appendChild(checkbox);
+                    row.appendChild(label);
+                    container.appendChild(row);
+                });
+            }
+
+            function moveMode(index, delta) {
+                var target = index + delta;
+                if (target < 0 || target >= modes.length) {
+                    return;
+                }
+
+                var tmp = modes[index];
+                modes[index] = modes[target];
+                modes[target] = tmp;
+                renderTileEditor();
+            }
+
+            function initModes(order) {
+                var enabledKeys = (order && order.length) ? order : ALL_MODES.map(function (m) { return m.key; });
+                var enabledSet = {};
+                enabledKeys.forEach(function (key) { enabledSet[key] = true; });
+
+                var result = [];
+                enabledKeys.forEach(function (key) {
+                    var def = ALL_MODES.filter(function (m) { return m.key === key; })[0];
+                    if (def) {
+                        result.push({ key: key, label: def.label, enabled: true });
+                    }
+                });
+
+                ALL_MODES.forEach(function (def) {
+                    if (!enabledSet[def.key]) {
+                        result.push({ key: def.key, label: def.label, enabled: false });
+                    }
+                });
+
+                modes = result;
+            }
+
             document.querySelector('#BrowseModesConfigPage')
                 .addEventListener('pageshow', function () {
                     Dashboard.showLoadingMsg();
@@ -54,6 +210,10 @@
                         document.querySelector('#TmdbApiKey').value = config.TmdbApiKey || '';
                         document.querySelector('#DiscoverPagesToScan').value = config.DiscoverPagesToScan || 15;
                         document.querySelector('#CacheDurationHours').value = config.CacheDurationHours || 6;
+                        document.querySelector('#TrendingMaxRank').value = config.TrendingMaxRank || 0;
+                        document.querySelector('#TopRatedMaxRank').value = config.TopRatedMaxRank || 0;
+                        initModes(config.BrowseModeOrder);
+                        renderTileEditor();
                         Dashboard.hideLoadingMsg();
                     });
                 });
@@ -66,6 +226,9 @@
                         config.TmdbApiKey = document.querySelector('#TmdbApiKey').value;
                         config.DiscoverPagesToScan = parseInt(document.querySelector('#DiscoverPagesToScan').value, 10) || 15;
                         config.CacheDurationHours = parseInt(document.querySelector('#CacheDurationHours').value, 10) || 6;
+                        config.TrendingMaxRank = parseInt(document.querySelector('#TrendingMaxRank').value, 10) || 0;
+                        config.TopRatedMaxRank = parseInt(document.querySelector('#TopRatedMaxRank').value, 10) || 0;
+                        config.BrowseModeOrder = modes.filter(function (m) { return m.enabled; }).map(function (m) { return m.key; });
                         ApiClient.updatePluginConfiguration(pluginId, config).then(function (result) {
                             Dashboard.processPluginConfigurationUpdateResult(result);
                         });

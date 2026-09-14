@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using MediaBrowser.Model.Plugins;
 
 namespace Jellyfin.Plugin.BrowseModes.Configuration;
@@ -31,4 +32,31 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Gets or sets how long a built list is cached, in hours.
     /// </summary>
     public int CacheDurationHours { get; set; } = 6;
+
+    /// <summary>
+    /// Gets or sets the lowest TMDb position to show in the Trending list. 0 means no cutoff.
+    /// </summary>
+    /// <remarks>
+    /// Position is 1-based: a value of 50 keeps only titles ranked 1 through 50 on TMDb's
+    /// trending list, and drops anything ranked lower regardless of whether it is in the library.
+    /// </remarks>
+    public int TrendingMaxRank { get; set; }
+
+    /// <summary>
+    /// Gets or sets the lowest TMDb position to show in the Top Rated list. 0 means no cutoff.
+    /// </summary>
+    /// <remarks>
+    /// Position is 1-based, mirroring <see cref="TrendingMaxRank"/> for the all-time list.
+    /// </remarks>
+    public int TopRatedMaxRank { get; set; }
+
+    /// <summary>
+    /// Gets or sets the browse-mode tile keys in display order. Keys not listed are hidden.
+    /// </summary>
+    /// <remarks>
+    /// The keys are the client's <c>BrowseMode</c> enum values. An empty list means the client
+    /// should use its built-in order and visibility. The plugin stores the list but does not
+    /// interpret it; the web client reads it from <c>/Discover/TileLayout</c>.
+    /// </remarks>
+    public List<string> BrowseModeOrder { get; set; } = new List<string>();
 }

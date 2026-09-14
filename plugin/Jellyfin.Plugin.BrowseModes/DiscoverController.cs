@@ -98,7 +98,7 @@ public class DiscoverController : ControllerBase
             .GetTrendingMovieIdsAsync(timeWindow, TmdbDiscoverClient.PagesToScan, cancellationToken)
             .ConfigureAwait(false);
 
-        return GetLocalItemsForTmdbIds(tmdbIds, BaseItemKind.Movie, userId, parentId, ParseFields(fields), limit);
+        return GetLocalItemsForTmdbIds(tmdbIds, BaseItemKind.Movie, userId, parentId, ParseFields(fields), limit, TmdbDiscoverClient.TrendingMaxRank);
     }
 
     /// <summary>
@@ -127,7 +127,7 @@ public class DiscoverController : ControllerBase
             .GetTrendingSeriesIdsAsync(timeWindow, TmdbDiscoverClient.PagesToScan, cancellationToken)
             .ConfigureAwait(false);
 
-        return GetLocalItemsForTmdbIds(tmdbIds, BaseItemKind.Series, userId, parentId, ParseFields(fields), limit);
+        return GetLocalItemsForTmdbIds(tmdbIds, BaseItemKind.Series, userId, parentId, ParseFields(fields), limit, TmdbDiscoverClient.TrendingMaxRank);
     }
 
     /// <summary>
@@ -153,7 +153,7 @@ public class DiscoverController : ControllerBase
             .GetTopRatedMovieIdsAsync(TmdbDiscoverClient.PagesToScan, cancellationToken)
             .ConfigureAwait(false);
 
-        return GetLocalItemsForTmdbIds(tmdbIds, BaseItemKind.Movie, userId, parentId, ParseFields(fields), limit);
+        return GetLocalItemsForTmdbIds(tmdbIds, BaseItemKind.Movie, userId, parentId, ParseFields(fields), limit, TmdbDiscoverClient.TopRatedMaxRank);
     }
 
     /// <summary>
@@ -179,7 +179,23 @@ public class DiscoverController : ControllerBase
             .GetTopRatedSeriesIdsAsync(TmdbDiscoverClient.PagesToScan, cancellationToken)
             .ConfigureAwait(false);
 
-        return GetLocalItemsForTmdbIds(tmdbIds, BaseItemKind.Series, userId, parentId, ParseFields(fields), limit);
+        return GetLocalItemsForTmdbIds(tmdbIds, BaseItemKind.Series, userId, parentId, ParseFields(fields), limit, TmdbDiscoverClient.TopRatedMaxRank);
+    }
+
+    /// <summary>
+    /// Gets the browse-mode tile keys in display order, as configured by the administrator.
+    /// </summary>
+    /// <remarks>
+    /// The client applies this order and hides any mode whose key is not listed. The plugin
+    /// itself only stores the list; the meaning of each key lives in the client.
+    /// </remarks>
+    /// <response code="200">The ordered tile keys returned.</response>
+    /// <returns>The ordered browse-mode tile keys.</returns>
+    [HttpGet("TileLayout")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult<List<string>> GetTileLayout()
+    {
+        return Ok(Plugin.Instance?.Configuration.BrowseModeOrder ?? new List<string>());
     }
 
     /// <summary>
@@ -237,6 +253,7 @@ public class DiscoverController : ControllerBase
 
     /// <summary>
     /// Resolves a set of TMDb ids to local library items, preserving the order they were given in.
+    /// <paramref name="maxRank"/> is the lowest 1-based TMDb position to include; 0 means no cutoff.
     /// </summary>
     private ActionResult<QueryResult<BaseItemDto>> GetLocalItemsForTmdbIds(
         IReadOnlyList<int> tmdbIds,
@@ -244,7 +261,8 @@ public class DiscoverController : ControllerBase
         Guid? userId,
         Guid? parentId,
         ItemFields[] fields,
-        int limit)
+        int limit,
+        int maxRank)
     {
         var effectiveUserId = ResolveUserId(userId);
         var user = effectiveUserId.IsEmpty()
@@ -288,7 +306,7 @@ public class DiscoverController : ControllerBase
 
         var ranked = items
             .Select(item => (Item: item, Rank: GetRank(item, rankByTmdbId)))
-            .Where(entry => entry.Rank >= 0)
+            .Where(entry => entry.Rank >= 0 && (maxRank <= 0 || entry.Rank < maxRank))
             .OrderBy(entry => entry.Rank)
             .Take(limit)
             .ToArray();

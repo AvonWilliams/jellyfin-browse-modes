@@ -72,6 +72,16 @@ public sealed class TmdbDiscoverClient : IDisposable
     /// </summary>
     public static int PagesToScan => Math.Max(1, Plugin.Instance?.Configuration.DiscoverPagesToScan ?? 15);
 
+    /// <summary>
+    /// Gets the lowest TMDb position to show in the Trending list, 0 meaning no cutoff.
+    /// </summary>
+    public static int TrendingMaxRank => Math.Max(0, Plugin.Instance?.Configuration.TrendingMaxRank ?? 0);
+
+    /// <summary>
+    /// Gets the lowest TMDb position to show in the Top Rated list, 0 meaning no cutoff.
+    /// </summary>
+    public static int TopRatedMaxRank => Math.Max(0, Plugin.Instance?.Configuration.TopRatedMaxRank ?? 0);
+
     private static int CacheDurationHours => Math.Max(1, Plugin.Instance?.Configuration.CacheDurationHours ?? 6);
 
     /// <summary>
