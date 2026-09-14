@@ -11,5 +11,5 @@
     "version": "__VERSION__",
     "status": "Active",
     "autoUpdate": false,
-    "imagePath": ""
+    "imagePath": "browse-modes.png"
 }

@@ -53,6 +53,7 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           mkdir -p dist/12.x/BrowseModes
           cp plugin/Jellyfin.Plugin.BrowseModes/bin/Release/net10.0/*.dll dist/12.x/BrowseModes/
+          cp plugin/browse-modes.png dist/12.x/BrowseModes/
           sed "s/__VERSION__/$VERSION/; s/__TIMESTAMP__/$(date -u +%Y-%m-%dT%H:%M:%SZ)/" \
             plugin/meta.template.json > dist/12.x/BrowseModes/meta.json
           cd dist/12.x/BrowseModes && zip -r ../../browse-modes_${VERSION}_12.x.zip . && cd ../../..
