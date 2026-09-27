@@ -27,6 +27,11 @@ public sealed class TmdbDiscoverClient : IDisposable
     private DateTime _studioCountsLastRefreshed = DateTime.MinValue;
     private static readonly TimeSpan StudioCountsCacheDuration = TimeSpan.FromHours(24);
 
+    // General per-value counts (genre/rating/tag/decade/studio), keyed by a caller-defined key.
+    private readonly Dictionary<string, Dictionary<string, int>> _countsByKey = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, DateTime> _countsRefreshed = new(StringComparer.Ordinal);
+    private static readonly TimeSpan CountsCacheDuration = TimeSpan.FromHours(24);
+
     /// <summary>
     /// Initializes a new instance of the <see cref="TmdbDiscoverClient"/> class.
     /// </summary>
@@ -187,6 +192,30 @@ public sealed class TmdbDiscoverClient : IDisposable
     {
         _studioCounts = counts;
         _studioCountsLastRefreshed = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Gets cached per-value counts for an arbitrary key, or null when stale or absent.
+    /// </summary>
+    public IReadOnlyDictionary<string, int>? GetCounts(string key)
+    {
+        if (_countsByKey.TryGetValue(key, out var counts)
+            && _countsRefreshed.TryGetValue(key, out var refreshed)
+            && DateTime.UtcNow - refreshed < CountsCacheDuration)
+        {
+            return counts;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Stores per-value counts under a key, overwriting any previous entry.
+    /// </summary>
+    public void SetCounts(string key, Dictionary<string, int> counts)
+    {
+        _countsByKey[key] = counts;
+        _countsRefreshed[key] = DateTime.UtcNow;
     }
 
     /// <inheritdoc />
