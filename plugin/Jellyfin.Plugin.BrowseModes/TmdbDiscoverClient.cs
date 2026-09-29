@@ -100,14 +100,16 @@ public sealed class TmdbDiscoverClient : IDisposable
     /// <param name="timeWindow">The window over which popularity is measured.</param>
     /// <param name="pages">The number of result pages to fetch.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
+    /// <param name="force">Whether to bypass the cache and refetch from TMDb.</param>
     /// <returns>The trending movie TMDb ids.</returns>
-    public Task<IReadOnlyList<int>> GetTrendingMovieIdsAsync(TimeWindow timeWindow, int pages, CancellationToken cancellationToken)
+    public Task<IReadOnlyList<int>> GetTrendingMovieIdsAsync(TimeWindow timeWindow, int pages, CancellationToken cancellationToken, bool force = false)
     {
         return GetListIdsAsync(
             $"trending-movies-{timeWindow}-{pages.ToString(CultureInfo.InvariantCulture)}",
             async page => (await TmDbClient.GetTrendingMoviesAsync(timeWindow, page, cancellationToken: cancellationToken)
                 .ConfigureAwait(false))?.Results?.Select(result => result.Id),
-            pages);
+            pages,
+            force);
     }
 
     /// <summary>
@@ -116,14 +118,16 @@ public sealed class TmdbDiscoverClient : IDisposable
     /// <param name="timeWindow">The window over which popularity is measured.</param>
     /// <param name="pages">The number of result pages to fetch.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
+    /// <param name="force">Whether to bypass the cache and refetch from TMDb.</param>
     /// <returns>The trending tv show TMDb ids.</returns>
-    public Task<IReadOnlyList<int>> GetTrendingSeriesIdsAsync(TimeWindow timeWindow, int pages, CancellationToken cancellationToken)
+    public Task<IReadOnlyList<int>> GetTrendingSeriesIdsAsync(TimeWindow timeWindow, int pages, CancellationToken cancellationToken, bool force = false)
     {
         return GetListIdsAsync(
             $"trending-series-{timeWindow}-{pages.ToString(CultureInfo.InvariantCulture)}",
             async page => (await TmDbClient.GetTrendingTvAsync(timeWindow, page, cancellationToken: cancellationToken)
                 .ConfigureAwait(false))?.Results?.Select(result => result.Id),
-            pages);
+            pages,
+            force);
     }
 
     /// <summary>
@@ -131,14 +135,16 @@ public sealed class TmdbDiscoverClient : IDisposable
     /// </summary>
     /// <param name="pages">The number of result pages to fetch.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
+    /// <param name="force">Whether to bypass the cache and refetch from TMDb.</param>
     /// <returns>The top rated movie TMDb ids.</returns>
-    public Task<IReadOnlyList<int>> GetTopRatedMovieIdsAsync(int pages, CancellationToken cancellationToken)
+    public Task<IReadOnlyList<int>> GetTopRatedMovieIdsAsync(int pages, CancellationToken cancellationToken, bool force = false)
     {
         return GetListIdsAsync(
             $"toprated-movies-{pages.ToString(CultureInfo.InvariantCulture)}",
             async page => (await TmDbClient.GetMovieTopRatedListAsync(page: page, cancellationToken: cancellationToken)
                 .ConfigureAwait(false))?.Results?.Select(result => result.Id),
-            pages);
+            pages,
+            force);
     }
 
     /// <summary>
@@ -146,14 +152,16 @@ public sealed class TmdbDiscoverClient : IDisposable
     /// </summary>
     /// <param name="pages">The number of result pages to fetch.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
+    /// <param name="force">Whether to bypass the cache and refetch from TMDb.</param>
     /// <returns>The top rated tv show TMDb ids.</returns>
-    public Task<IReadOnlyList<int>> GetTopRatedSeriesIdsAsync(int pages, CancellationToken cancellationToken)
+    public Task<IReadOnlyList<int>> GetTopRatedSeriesIdsAsync(int pages, CancellationToken cancellationToken, bool force = false)
     {
         return GetListIdsAsync(
             $"toprated-series-{pages.ToString(CultureInfo.InvariantCulture)}",
             async page => (await TmDbClient.GetTvShowTopRatedAsync(page: page, cancellationToken: cancellationToken)
                 .ConfigureAwait(false))?.Results?.Select(result => result.Id),
-            pages);
+            pages,
+            force);
     }
 
     /// <summary>
@@ -161,15 +169,16 @@ public sealed class TmdbDiscoverClient : IDisposable
     /// have to wait for TMDb.
     /// </summary>
     /// <param name="cancellationToken">The cancellation token.</param>
+    /// <param name="force">Whether to bypass the cache and refetch every list from TMDb.</param>
     /// <returns>A task representing the warm-up.</returns>
-    public async Task WarmDiscoverListsAsync(CancellationToken cancellationToken)
+    public async Task WarmDiscoverListsAsync(CancellationToken cancellationToken, bool force = false)
     {
         var pages = PagesToScan;
 
-        await GetTrendingMovieIdsAsync(TimeWindow.Week, pages, cancellationToken).ConfigureAwait(false);
-        await GetTrendingSeriesIdsAsync(TimeWindow.Week, pages, cancellationToken).ConfigureAwait(false);
-        await GetTopRatedMovieIdsAsync(pages, cancellationToken).ConfigureAwait(false);
-        await GetTopRatedSeriesIdsAsync(pages, cancellationToken).ConfigureAwait(false);
+        await GetTrendingMovieIdsAsync(TimeWindow.Week, pages, cancellationToken, force).ConfigureAwait(false);
+        await GetTrendingSeriesIdsAsync(TimeWindow.Week, pages, cancellationToken, force).ConfigureAwait(false);
+        await GetTopRatedMovieIdsAsync(pages, cancellationToken, force).ConfigureAwait(false);
+        await GetTopRatedSeriesIdsAsync(pages, cancellationToken, force).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -233,9 +242,10 @@ public sealed class TmdbDiscoverClient : IDisposable
     private async Task<IReadOnlyList<int>> GetListIdsAsync(
         string cacheKey,
         Func<int, Task<IEnumerable<int>?>> fetchPage,
-        int pages)
+        int pages,
+        bool force = false)
     {
-        if (_memoryCache.TryGetValue(cacheKey, out IReadOnlyList<int>? cachedIds) && cachedIds is not null)
+        if (!force && _memoryCache.TryGetValue(cacheKey, out IReadOnlyList<int>? cachedIds) && cachedIds is not null)
         {
             return cachedIds;
         }

@@ -77,7 +77,7 @@ public class RefreshDiscoverListsTask : IScheduledTask
 
         try
         {
-            await _discoverClient.WarmDiscoverListsAsync(cancellationToken).ConfigureAwait(false);
+            await _discoverClient.WarmDiscoverListsAsync(cancellationToken, force: true).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
