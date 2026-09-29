@@ -391,7 +391,7 @@ public class DiscoverController : ControllerBase
         CancellationToken cancellationToken = default)
     {
         var kinds = ParseItemKinds(itemTypes);
-        return Ok(GetOrBuildCounts(type, parentId, kinds));
+        return Ok(_discoverClient.GetOrBuildCounts(type, parentId, kinds, _libraryManager));
     }
 
     /// <summary>
@@ -505,102 +505,5 @@ public class DiscoverController : ControllerBase
         }
 
         return kinds.ToArray();
-    }
-
-    /// <summary>
-    /// Builds value → count for a picker by enumerating items and reading their metadata.
-    /// </summary>
-    /// <remarks>
-    /// Cached for 24 hours in <see cref="TmdbDiscoverClient"/>. Decades are keyed by their start
-    /// year as a bare integer string (e.g. "1980"), matching the client's filter values.
-    /// </remarks>
-    private Dictionary<string, int> GetOrBuildCounts(string type, Guid? parentId, BaseItemKind[] itemTypes)
-    {
-        var scopeId = parentId.HasValue && !parentId.Value.IsEmpty() ? parentId.Value : Guid.Empty;
-        var cacheKey = $"{type}:{scopeId}:{string.Join(',', itemTypes)}";
-        var cached = _discoverClient.GetCounts(cacheKey);
-        if (cached is not null)
-        {
-            return new Dictionary<string, int>(cached, StringComparer.OrdinalIgnoreCase);
-        }
-
-        var query = new InternalItemsQuery
-        {
-            IncludeItemTypes = itemTypes,
-            Recursive = true
-        };
-
-        if (parentId.HasValue && !parentId.Value.IsEmpty())
-        {
-            query.ParentId = parentId.Value;
-        }
-
-        var items = _libraryManager.GetItemList(query);
-        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        foreach (var item in items)
-        {
-            switch (type)
-            {
-                case "genre":
-                    if (item.Genres is not null)
-                    {
-                        foreach (var genre in item.Genres)
-                        {
-                            Increment(counts, genre);
-                        }
-                    }
-
-                    break;
-
-                case "rating":
-                    Increment(counts, item.OfficialRating);
-                    break;
-
-                case "tag":
-                    if (item.Tags is not null)
-                    {
-                        foreach (var tag in item.Tags)
-                        {
-                            Increment(counts, tag);
-                        }
-                    }
-
-                    break;
-
-                case "decade":
-                    var year = item.ProductionYear ?? item.PremiereDate?.Year;
-                    if (year.HasValue)
-                    {
-                        Increment(counts, ((year.Value / 10) * 10).ToString(CultureInfo.InvariantCulture) + "s");
-                    }
-
-                    break;
-
-                case "studio":
-                    if (item.Studios is not null)
-                    {
-                        foreach (var studio in item.Studios)
-                        {
-                            Increment(counts, studio);
-                        }
-                    }
-
-                    break;
-            }
-        }
-
-        _discoverClient.SetCounts(cacheKey, counts);
-        return counts;
-    }
-
-    private static void Increment(Dictionary<string, int> counts, string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return;
-        }
-
-        counts.TryGetValue(value, out var current);
-        counts[value] = current + 1;
     }
 }
