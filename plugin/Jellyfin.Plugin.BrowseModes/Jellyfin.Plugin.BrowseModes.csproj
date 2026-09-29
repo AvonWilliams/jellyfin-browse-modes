@@ -6,8 +6,8 @@
     <ImplicitUsings>false</ImplicitUsings>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
-    <AssemblyVersion>2.0.1.0</AssemblyVersion>
-    <FileVersion>2.0.1.0</FileVersion>
+    <AssemblyVersion>2.0.2.0</AssemblyVersion>
+    <FileVersion>2.0.2.0</FileVersion>
     <RootNamespace>Jellyfin.Plugin.BrowseModes</RootNamespace>
     <!-- A plugin is loaded from a folder, not via deps.json, so its third-party dependencies have
          to sit next to it in the output. -->
@@ -26,10 +26,10 @@
       shipping a second copy in the plugin folder would give the plugin's AssemblyLoadContext its
       own type identities, so casts against server-provided objects would fail.
     -->
-    <PackageReference Include="Jellyfin.Controller" Version="12.0.0-rc3" ExcludeAssets="runtime" />
-    <PackageReference Include="Jellyfin.Model" Version="12.0.0-rc3" ExcludeAssets="runtime" />
-    <PackageReference Include="Jellyfin.Data" Version="12.0.0-rc3" ExcludeAssets="runtime" />
-    <PackageReference Include="Jellyfin.Extensions" Version="12.0.0-rc3" ExcludeAssets="runtime" />
+    <PackageReference Include="Jellyfin.Controller" Version="12.1.0" ExcludeAssets="runtime" />
+    <PackageReference Include="Jellyfin.Model" Version="12.1.0" ExcludeAssets="runtime" />
+    <PackageReference Include="Jellyfin.Data" Version="12.1.0" ExcludeAssets="runtime" />
+    <PackageReference Include="Jellyfin.Extensions" Version="12.1.0" ExcludeAssets="runtime" />
 
     <!-- Not shipped by the server, so this one does need to travel with the plugin. -->
     <PackageReference Include="TMDbLib" Version="3.0.0" />

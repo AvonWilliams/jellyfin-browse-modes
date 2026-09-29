@@ -6,7 +6,7 @@
     "name": "Browse Modes",
     "overview": "Discover lists backing the Browse Modes tile grid.",
     "owner": "avonwilliams",
-    "targetAbi": "12.0.0.0",
+    "targetAbi": "12.1.0.0",
     "timestamp": "__TIMESTAMP__",
     "version": "__VERSION__",
     "status": "Active",
