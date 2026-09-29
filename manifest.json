@@ -9,6 +9,22 @@
         "imageUrl": "",
         "versions": [
             {
+                "version": "2.0.3.0",
+                "changelog": "Force refresh of discover lists, configurable Trending window (week/day), pre-baked picker counts.",
+                "targetAbi": "12.1.0.0",
+                "sourceUrl": "https://github.com/AvonWilliams/jellyfin-browse-modes/releases/download/v2.0.3.0/browse-modes_2.0.3.0_12.1.0.zip",
+                "checksum": "3924546207afd6d43a0217ccd99ff19d",
+                "timestamp": "2026-09-29T13:14:00Z"
+            },
+            {
+                "version": "2.0.3.0",
+                "changelog": "Force refresh of discover lists, configurable Trending window (week/day), pre-baked picker counts.",
+                "targetAbi": "12.0.0.0",
+                "sourceUrl": "https://github.com/AvonWilliams/jellyfin-browse-modes/releases/download/v2.0.3.0/browse-modes_2.0.3.0_12.0.0.zip",
+                "checksum": "f6c094231d07ee674c9f8f8fd98007f4",
+                "timestamp": "2026-09-29T13:14:00Z"
+            },
+            {
                 "version": "2.0.2.0",
                 "changelog": "12.x build. Adds /Discover/Counts endpoint for picker item counts (genres, ratings, tags, decades, studios) in one request.",
                 "targetAbi": "12.1.0.0",
