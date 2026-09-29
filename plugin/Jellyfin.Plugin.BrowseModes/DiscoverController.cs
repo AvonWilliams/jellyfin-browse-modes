@@ -90,10 +90,10 @@ public class DiscoverController : ControllerBase
         [FromQuery] Guid? parentId,
         [FromQuery] string? fields,
         [FromQuery] int limit = 24,
-        [FromQuery] bool weekly = true,
+        [FromQuery] bool? weekly = null,
         CancellationToken cancellationToken = default)
     {
-        var timeWindow = weekly ? TimeWindow.Week : TimeWindow.Day;
+        var timeWindow = (weekly ?? TmdbDiscoverClient.TrendingWeekly) ? TimeWindow.Week : TimeWindow.Day;
         var tmdbIds = await _discoverClient
             .GetTrendingMovieIdsAsync(timeWindow, TmdbDiscoverClient.PagesToScan, cancellationToken)
             .ConfigureAwait(false);
@@ -119,10 +119,10 @@ public class DiscoverController : ControllerBase
         [FromQuery] Guid? parentId,
         [FromQuery] string? fields,
         [FromQuery] int limit = 24,
-        [FromQuery] bool weekly = true,
+        [FromQuery] bool? weekly = null,
         CancellationToken cancellationToken = default)
     {
-        var timeWindow = weekly ? TimeWindow.Week : TimeWindow.Day;
+        var timeWindow = (weekly ?? TmdbDiscoverClient.TrendingWeekly) ? TimeWindow.Week : TimeWindow.Day;
         var tmdbIds = await _discoverClient
             .GetTrendingSeriesIdsAsync(timeWindow, TmdbDiscoverClient.PagesToScan, cancellationToken)
             .ConfigureAwait(false);

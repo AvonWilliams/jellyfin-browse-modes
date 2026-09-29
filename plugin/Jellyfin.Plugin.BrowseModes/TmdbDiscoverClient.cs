@@ -92,6 +92,11 @@ public sealed class TmdbDiscoverClient : IDisposable
     /// </summary>
     public static int TopRatedMaxRank => Math.Max(0, Plugin.Instance?.Configuration.TopRatedMaxRank ?? 0);
 
+    /// <summary>
+    /// Gets a value indicating whether Trending measures popularity over a week rather than a day.
+    /// </summary>
+    public static bool TrendingWeekly => Plugin.Instance?.Configuration.TrendingWeekly ?? true;
+
     private static int CacheDurationHours => Math.Max(1, Plugin.Instance?.Configuration.CacheDurationHours ?? 6);
 
     /// <summary>
@@ -174,9 +179,10 @@ public sealed class TmdbDiscoverClient : IDisposable
     public async Task WarmDiscoverListsAsync(CancellationToken cancellationToken, bool force = false)
     {
         var pages = PagesToScan;
+        var trendingWindow = TrendingWeekly ? TimeWindow.Week : TimeWindow.Day;
 
-        await GetTrendingMovieIdsAsync(TimeWindow.Week, pages, cancellationToken, force).ConfigureAwait(false);
-        await GetTrendingSeriesIdsAsync(TimeWindow.Week, pages, cancellationToken, force).ConfigureAwait(false);
+        await GetTrendingMovieIdsAsync(trendingWindow, pages, cancellationToken, force).ConfigureAwait(false);
+        await GetTrendingSeriesIdsAsync(trendingWindow, pages, cancellationToken, force).ConfigureAwait(false);
         await GetTopRatedMovieIdsAsync(pages, cancellationToken, force).ConfigureAwait(false);
         await GetTopRatedSeriesIdsAsync(pages, cancellationToken, force).ConfigureAwait(false);
     }

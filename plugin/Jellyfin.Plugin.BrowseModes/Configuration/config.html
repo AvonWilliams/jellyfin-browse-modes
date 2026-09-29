@@ -70,6 +70,15 @@
                 </div>
 
                 <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="TrendingWeekly">Trending window: This Week</label>
+                    <input id="TrendingWeekly" name="TrendingWeekly" type="checkbox" is="emby-checkbox" />
+                    <div class="fieldDescription">
+                        Checked measures popularity over the current week; unchecked over the
+                        current day (TMDb's site default).
+                    </div>
+                </div>
+
+                <div class="inputContainer">
                     <label class="inputLabel inputLabelUnfocused" for="TrendingMaxRank">Trending rank limit</label>
                     <input id="TrendingMaxRank" name="TrendingMaxRank" type="number" min="0" max="1000" step="1" is="emby-input" />
                     <div class="fieldDescription">
@@ -213,6 +222,7 @@
                         document.querySelector('#CacheDurationHours').value = config.CacheDurationHours || 6;
                         document.querySelector('#TrendingMaxRank').value = config.TrendingMaxRank || 0;
                         document.querySelector('#TopRatedMaxRank').value = config.TopRatedMaxRank || 0;
+                        document.querySelector('#TrendingWeekly').checked = config.TrendingWeekly !== false;
                         initModes(config.BrowseModeOrder);
                         renderTileEditor();
                         Dashboard.hideLoadingMsg();
@@ -229,6 +239,7 @@
                         config.CacheDurationHours = parseInt(document.querySelector('#CacheDurationHours').value, 10) || 6;
                         config.TrendingMaxRank = parseInt(document.querySelector('#TrendingMaxRank').value, 10) || 0;
                         config.TopRatedMaxRank = parseInt(document.querySelector('#TopRatedMaxRank').value, 10) || 0;
+                        config.TrendingWeekly = document.querySelector('#TrendingWeekly').checked;
                         config.BrowseModeOrder = modes.filter(function (m) { return m.enabled; }).map(function (m) { return m.key; });
                         ApiClient.updatePluginConfiguration(pluginId, config).then(function (result) {
                             Dashboard.processPluginConfigurationUpdateResult(result);
