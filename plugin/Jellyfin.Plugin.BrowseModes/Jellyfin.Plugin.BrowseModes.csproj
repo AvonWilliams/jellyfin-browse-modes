@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>false</ImplicitUsings>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
@@ -26,10 +26,10 @@
       shipping a second copy in the plugin folder would give the plugin's AssemblyLoadContext its
       own type identities, so casts against server-provided objects would fail.
     -->
-    <PackageReference Include="Jellyfin.Controller" Version="10.11.11" ExcludeAssets="runtime" />
-    <PackageReference Include="Jellyfin.Model" Version="10.11.11" ExcludeAssets="runtime" />
-    <PackageReference Include="Jellyfin.Data" Version="10.11.11" ExcludeAssets="runtime" />
-    <PackageReference Include="Jellyfin.Extensions" Version="10.11.11" ExcludeAssets="runtime" />
+    <PackageReference Include="Jellyfin.Controller" Version="12.0.0-rc3" ExcludeAssets="runtime" />
+    <PackageReference Include="Jellyfin.Model" Version="12.0.0-rc3" ExcludeAssets="runtime" />
+    <PackageReference Include="Jellyfin.Data" Version="12.0.0-rc3" ExcludeAssets="runtime" />
+    <PackageReference Include="Jellyfin.Extensions" Version="12.0.0-rc3" ExcludeAssets="runtime" />
 
     <!-- Not shipped by the server, so this one does need to travel with the plugin. -->
     <PackageReference Include="TMDbLib" Version="3.0.0" />
