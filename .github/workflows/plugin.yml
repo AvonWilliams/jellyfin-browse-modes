@@ -29,13 +29,16 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Building $VERSION"
 
-      - name: Build
+      # ── 12.0.0 ────────────────────────────────────────────────────────
+
+      - name: Build (12.0.0)
         run: |
           dotnet build plugin/Jellyfin.Plugin.BrowseModes/Jellyfin.Plugin.BrowseModes.csproj -c Release \
             -p:AssemblyVersion=${{ steps.version.outputs.version }} \
-            -p:FileVersion=${{ steps.version.outputs.version }}
+            -p:FileVersion=${{ steps.version.outputs.version }} \
+            -p:JellyfinVersion=12.0.0
 
-      - name: Check shipped assemblies
+      - name: Check shipped assemblies (12.0.0)
         run: |
           cd plugin/Jellyfin.Plugin.BrowseModes/bin/Release/net10.0
           ls *.dll
@@ -45,21 +48,54 @@ jobs:
           fi
           test -f TMDbLib.dll || { echo "::error::TMDbLib.dll missing from output"; exit 1; }
 
-      - name: Package
-        id: package
+      - name: Package (12.0.0)
+        id: package-1200
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          mkdir -p dist/BrowseModes
-          cp plugin/Jellyfin.Plugin.BrowseModes/bin/Release/net10.0/*.dll dist/BrowseModes/
-          sed "s/__VERSION__/$VERSION/; s/__TIMESTAMP__/$(date -u +%Y-%m-%dT%H:%M:%SZ)/" \
-            plugin/meta.template.json > dist/BrowseModes/meta.json
-          cd dist/BrowseModes && zip -r ../browse-modes_${VERSION}_12.x.zip . && cd ../..
-          echo "checksum=$(md5sum dist/browse-modes_${VERSION}_12.x.zip | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          mkdir -p dist/12.0.0/BrowseModes
+          cp plugin/Jellyfin.Plugin.BrowseModes/bin/Release/net10.0/*.dll dist/12.0.0/BrowseModes/
+          sed "s/__VERSION__/$VERSION/; s/__TARGET_ABI__/12.0.0.0/; s/__TIMESTAMP__/$(date -u +%Y-%m-%dT%H:%M:%SZ)/" \
+            plugin/meta.template.json > dist/12.0.0/BrowseModes/meta.json
+          cd dist/12.0.0/BrowseModes && zip -r ../../browse-modes_${VERSION}_12.0.0.zip . && cd ../../..
+          echo "checksum=$(md5sum dist/browse-modes_${VERSION}_12.0.0.zip | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
-      - name: Report checksum
+      # ── 12.1.0 ────────────────────────────────────────────────────────
+
+      - name: Build (12.1.0)
+        run: |
+          dotnet build plugin/Jellyfin.Plugin.BrowseModes/Jellyfin.Plugin.BrowseModes.csproj -c Release \
+            -p:AssemblyVersion=${{ steps.version.outputs.version }} \
+            -p:FileVersion=${{ steps.version.outputs.version }} \
+            -p:JellyfinVersion=12.1.0
+
+      - name: Check shipped assemblies (12.1.0)
+        run: |
+          cd plugin/Jellyfin.Plugin.BrowseModes/bin/Release/net10.0
+          ls *.dll
+          if ls | grep -qE '^(Jellyfin\.(Controller|Model|Data|Extensions)|MediaBrowser\.)'; then
+            echo "::error::A Jellyfin assembly is being shipped with the plugin"
+            exit 1
+          fi
+          test -f TMDbLib.dll || { echo "::error::TMDbLib.dll missing from output"; exit 1; }
+
+      - name: Package (12.1.0)
+        id: package-1210
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          mkdir -p dist/12.1.0/BrowseModes
+          cp plugin/Jellyfin.Plugin.BrowseModes/bin/Release/net10.0/*.dll dist/12.1.0/BrowseModes/
+          sed "s/__VERSION__/$VERSION/; s/__TARGET_ABI__/12.1.0.0/; s/__TIMESTAMP__/$(date -u +%Y-%m-%dT%H:%M:%SZ)/" \
+            plugin/meta.template.json > dist/12.1.0/BrowseModes/meta.json
+          cd dist/12.1.0/BrowseModes && zip -r ../../browse-modes_${VERSION}_12.1.0.zip . && cd ../../..
+          echo "checksum=$(md5sum dist/browse-modes_${VERSION}_12.1.0.zip | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      # ── Report ────────────────────────────────────────────────────────
+
+      - name: Report checksums
         run: |
           echo "### Plugin ${{ steps.version.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "12.x: \`${{ steps.package.outputs.checksum }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "12.0.0: \`${{ steps.package-1200.outputs.checksum }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "12.1.0: \`${{ steps.package-1210.outputs.checksum }}\`" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         with:
