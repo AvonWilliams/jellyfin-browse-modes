@@ -2,6 +2,11 @@
 # Installs/updates the Browse Modes plugin and web bundle on a Jellyfin server.
 # Detects the running server version (12.x only) and picks the matching assets
 # from the latest GitHub releases.
+#
+# Ordering: the Jellyfin process is stopped before any plugin/web file is
+# removed or replaced and started again afterwards. A running server holds the
+# plugin DLLs open (especially on FUSE-backed config volumes under Docker),
+# which makes "rm -rf" of the old plugin dir fail with "Directory not empty".
 set -euo pipefail
 
 PLUGIN_REPO="AvonWilliams/jellyfin-browse-modes"
@@ -13,6 +18,9 @@ PORT="${JELLYFIN_PORT:-8096}"
 CONTAINER=""
 WEB_ONLY=0
 PLUGIN_ONLY=0
+
+plugin_dir="/var/lib/jellyfin/plugins"
+web_dir="/usr/share/jellyfin/web"
 
 usage() {
   cat <<'EOF'
@@ -63,7 +71,30 @@ if [ -n "$CONTAINER" ] && ! command -v docker >/dev/null 2>&1; then
 fi
 
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
+stopped=0
+
+# Start the server again after we stopped it. Idempotent: only acts when
+# $stopped is 1, so the EXIT trap can call it safely on every exit path.
+start_server() {
+  if [ "$stopped" -ne 1 ]; then
+    return 0
+  fi
+  if [ -n "$CONTAINER" ]; then
+    echo "Starting container ${CONTAINER}"
+    docker start "$CONTAINER"
+  else
+    echo "Starting Jellyfin via systemctl"
+    systemctl start jellyfin
+  fi
+  stopped=0
+}
+
+cleanup() {
+  # Safety net: never leave the server stopped if a later step failed.
+  start_server || true
+  rm -rf "$tmp"
+}
+trap cleanup EXIT
 
 # ---- detect the running server version ----
 base="http://${HOST}:${PORT}"
@@ -86,7 +117,10 @@ case "$major_minor" in
 esac
 echo "Detected Jellyfin ${version} (plugin targetAbi ${abi})"
 
-# ---- install the plugin ----
+# ---- decide what needs updating (no server files touched yet) ----
+plugin_update=0
+web_update=0
+
 if [ "$WEB_ONLY" -eq 0 ]; then
   echo "Fetching latest Browse Modes plugin release..."
   release=$(curl -fsSL -H "Accept: application/vnd.github+json" "${API}/${PLUGIN_REPO}/releases/latest") || {
@@ -100,37 +134,53 @@ if [ "$WEB_ONLY" -eq 0 ]; then
     exit 1
   fi
 
-  echo "Downloading $(basename "$asset_url")"
-  curl -fsSL -o "$tmp/plugin.zip" "$asset_url" || { echo "Download failed: ${asset_url}" >&2; exit 1; }
+  asset_name=$(basename "$asset_url")
+  case "$asset_name" in
+    "browse-modes_"*"_${abi}.zip") : ;;
+    *) echo "Unexpected plugin asset name: ${asset_name}" >&2; exit 1 ;;
+  esac
+  # Latest release version, parsed from the asset filename browse-modes_<ver>_<abi>.zip
+  latest_ver="${asset_name#browse-modes_}"
+  latest_ver="${latest_ver%_${abi}.zip}"
 
-  # The zip contains the .dlls and meta.json at its top level (no wrapper dir),
-  # so extract to a staging dir and place it into a <name>_<version> folder.
-  mkdir -p "$tmp/plugin_stage"
-  unzip -q -o "$tmp/plugin.zip" -d "$tmp/plugin_stage"
-  name=$(sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$tmp/plugin_stage/meta.json" | head -1)
-  pver=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$tmp/plugin_stage/meta.json" | head -1)
-  if [ -z "$name" ] || [ -z "$pver" ]; then
-    echo "Plugin meta.json is missing name/version; cannot determine install directory" >&2
-    exit 1
-  fi
-  pdir="${name}_${pver}"
-
+  # Version currently installed (if any), from the existing plugin's meta.json.
+  installed_ver=""
   if [ -n "$CONTAINER" ]; then
-    docker exec "$CONTAINER" mkdir -p /config/plugins
-    docker exec "$CONTAINER" sh -c 'rm -rf /config/plugins/Browse\ Modes_*'
-    docker cp "$tmp/plugin_stage" "$CONTAINER:/config/plugins/${pdir}"
-    echo "Installed plugin to container ${CONTAINER}:/config/plugins/${pdir}"
+    meta=$(docker exec "$CONTAINER" sh -c 'cat /config/plugins/Browse\ Modes_*/meta.json 2>/dev/null' || true)
+    installed_ver=$(printf '%s' "$meta" | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
   else
-    plugin_dir="/var/lib/jellyfin/plugins"
-    rm -rf "$plugin_dir/Browse Modes_"*
-    mkdir -p "$plugin_dir/$pdir"
-    cp -a "$tmp/plugin_stage/." "$plugin_dir/$pdir/"
-    echo "Installed plugin to ${plugin_dir}/${pdir}"
+    for f in "$plugin_dir"/Browse\ Modes_*/meta.json; do
+      [ -e "$f" ] || continue
+      installed_ver=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$f" | head -1)
+      break
+    done
+  fi
+
+  if [ -n "$installed_ver" ] && [ "$installed_ver" = "$latest_ver" ]; then
+    echo "Plugin is already up to date (version ${latest_ver}); skipping plugin."
+  else
+    plugin_update=1
+    echo "Downloading ${asset_name}"
+    curl -fsSL -o "$tmp/plugin.zip" "$asset_url" || { echo "Download failed: ${asset_url}" >&2; exit 1; }
+
+    # The zip contains the .dlls and meta.json at its top level (no wrapper
+    # dir), so extract to a staging dir and place it into a <name>_<version>
+    # folder.
+    mkdir -p "$tmp/plugin_stage"
+    unzip -q -o "$tmp/plugin.zip" -d "$tmp/plugin_stage"
+    name=$(sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$tmp/plugin_stage/meta.json" | head -1)
+    pver=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$tmp/plugin_stage/meta.json" | head -1)
+    if [ -z "$name" ] || [ -z "$pver" ]; then
+      echo "Plugin meta.json is missing name/version; cannot determine install directory" >&2
+      exit 1
+    fi
+    pdir="${name}_${pver}"
   fi
 fi
 
-# ---- install the web bundle ----
 if [ "$PLUGIN_ONLY" -eq 0 ]; then
+  # The web bundle has no in-file version marker, so there is nothing to
+  # compare against: always download and apply the latest bundle.
   echo "Fetching latest Browse Modes web release..."
   wrel=$(curl -fsSL -H "Accept: application/vnd.github+json" "${API}/${WEB_REPO}/releases/latest") || {
     echo "Failed to query the latest web release from GitHub" >&2
@@ -145,31 +195,58 @@ if [ "$PLUGIN_ONLY" -eq 0 ]; then
 
   echo "Downloading $(basename "$web_url")"
   curl -fsSL -o "$tmp/web.zip" "$web_url" || { echo "Download failed: ${web_url}" >&2; exit 1; }
-
   mkdir -p "$tmp/web_stage"
   unzip -q -o "$tmp/web.zip" -d "$tmp/web_stage"
-  ts=$(date +%Y%m%d%H%M%S)
+  web_update=1
+fi
 
+if [ "$plugin_update" -eq 0 ] && [ "$web_update" -eq 0 ]; then
+  echo "Already up to date; nothing to install."
+  exit 0
+fi
+
+# ---- stop the server before touching any files ----
+if [ -n "$CONTAINER" ]; then
+  echo "Stopping container ${CONTAINER}"
+  docker stop "$CONTAINER"
+else
+  echo "Stopping Jellyfin via systemctl"
+  systemctl stop jellyfin
+fi
+stopped=1
+
+# ---- install the plugin ----
+if [ "$plugin_update" -eq 1 ]; then
+  if [ -n "$CONTAINER" ]; then
+    docker exec "$CONTAINER" mkdir -p /config/plugins
+    # Plugin dir name contains a space; escape it for the container's sh.
+    docker exec "$CONTAINER" sh -c 'rm -rf /config/plugins/Browse\ Modes_*'
+    docker cp "$tmp/plugin_stage" "$CONTAINER:/config/plugins/${pdir}"
+    echo "Installed plugin to container ${CONTAINER}:/config/plugins/${pdir}"
+  else
+    rm -rf "$plugin_dir/Browse Modes_"*
+    mkdir -p "$plugin_dir/$pdir"
+    cp -a "$tmp/plugin_stage/." "$plugin_dir/$pdir/"
+    echo "Installed plugin to ${plugin_dir}/${pdir}"
+  fi
+fi
+
+# ---- install the web bundle ----
+if [ "$web_update" -eq 1 ]; then
+  ts=$(date +%Y%m%d%H%M%S)
   if [ -n "$CONTAINER" ]; then
     docker exec "$CONTAINER" sh -c "mkdir -p /jellyfin; if [ -d /jellyfin/jellyfin-web ]; then mv /jellyfin/jellyfin-web /jellyfin/jellyfin-web.bak.${ts}; fi"
     docker cp "$tmp/web_stage" "$CONTAINER:/jellyfin/jellyfin-web"
     echo "Installed web bundle to container ${CONTAINER}:/jellyfin/jellyfin-web (backup: jellyfin-web.bak.${ts})"
   else
-    web_dir="/usr/share/jellyfin/web"
     if [ -d "$web_dir" ]; then mv "$web_dir" "${web_dir}.bak.${ts}"; fi
     mkdir -p "$web_dir"
-    unzip -q -o "$tmp/web.zip" -d "$web_dir"
+    cp -a "$tmp/web_stage/." "$web_dir/"
     echo "Installed web bundle to ${web_dir} (backup: ${web_dir}.bak.${ts})"
   fi
 fi
 
-# ---- restart ----
-if [ -n "$CONTAINER" ]; then
-  echo "Restarting container ${CONTAINER}"
-  docker restart "$CONTAINER"
-else
-  echo "Restarting Jellyfin via systemctl"
-  systemctl restart jellyfin
-fi
+# ---- start the server back up ----
+start_server
 
 echo "Done."
