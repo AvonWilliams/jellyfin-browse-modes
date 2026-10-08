@@ -34,14 +34,6 @@ public class PluginConfiguration : BasePluginConfiguration
     public int CacheDurationHours { get; set; } = 6;
 
     /// <summary>
-    /// Gets or sets a value indicating whether Trending measures popularity over a week rather than a day.
-    /// </summary>
-    /// <remarks>
-    /// When true, Trending mirrors TMDb's "This Week" list; when false, it mirrors "Today".
-    /// </remarks>
-    public bool TrendingWeekly { get; set; } = true;
-
-    /// <summary>
     /// Gets or sets the lowest TMDb position to show in the Trending list. 0 means no cutoff.
     /// </summary>
     /// <remarks>

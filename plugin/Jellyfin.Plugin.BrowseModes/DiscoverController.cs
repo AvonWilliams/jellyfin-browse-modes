@@ -84,7 +84,6 @@ public class DiscoverController : ControllerBase
     /// <param name="parentId">Optional. Specify this to localize the search to a specific library.</param>
     /// <param name="fields">Optional. Comma delimited list of fields to return.</param>
     /// <param name="limit">Optional. The maximum number of items to return.</param>
-    /// <param name="weekly">Optional. Measure popularity over a week rather than a day.</param>
     /// <param name="source">Optional. The ranked data source; only "tmdb" is implemented.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <response code="200">Trending movies returned.</response>
@@ -96,7 +95,6 @@ public class DiscoverController : ControllerBase
         [FromQuery] Guid? parentId,
         [FromQuery] string? fields,
         [FromQuery] int limit = 24,
-        [FromQuery] bool? weekly = null,
         [FromQuery] string? source = null,
         CancellationToken cancellationToken = default)
     {
@@ -106,7 +104,7 @@ public class DiscoverController : ControllerBase
             return Ok(new DiscoverRankedResult { Source = resolvedSource });
         }
 
-        var timeWindow = (weekly ?? TmdbDiscoverClient.TrendingWeekly) ? TimeWindow.Week : TimeWindow.Day;
+        var timeWindow = TimeWindow.Week;
         var titles = await _discoverClient
             .GetTrendingMovieTitlesAsync(timeWindow, TmdbDiscoverClient.PagesToScan, cancellationToken)
             .ConfigureAwait(false);
@@ -121,7 +119,6 @@ public class DiscoverController : ControllerBase
     /// <param name="parentId">Optional. Specify this to localize the search to a specific library.</param>
     /// <param name="fields">Optional. Comma delimited list of fields to return.</param>
     /// <param name="limit">Optional. The maximum number of items to return.</param>
-    /// <param name="weekly">Optional. Measure popularity over a week rather than a day.</param>
     /// <param name="source">Optional. The ranked data source; only "tmdb" is implemented.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <response code="200">Trending shows returned.</response>
@@ -133,7 +130,6 @@ public class DiscoverController : ControllerBase
         [FromQuery] Guid? parentId,
         [FromQuery] string? fields,
         [FromQuery] int limit = 24,
-        [FromQuery] bool? weekly = null,
         [FromQuery] string? source = null,
         CancellationToken cancellationToken = default)
     {
@@ -143,7 +139,7 @@ public class DiscoverController : ControllerBase
             return Ok(new DiscoverRankedResult { Source = resolvedSource });
         }
 
-        var timeWindow = (weekly ?? TmdbDiscoverClient.TrendingWeekly) ? TimeWindow.Week : TimeWindow.Day;
+        var timeWindow = TimeWindow.Week;
         var titles = await _discoverClient
             .GetTrendingSeriesTitlesAsync(timeWindow, TmdbDiscoverClient.PagesToScan, cancellationToken)
             .ConfigureAwait(false);
