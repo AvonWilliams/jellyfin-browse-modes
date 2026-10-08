@@ -104,71 +104,120 @@ public sealed class TmdbDiscoverClient : IDisposable
     private static int CacheDurationHours => Math.Max(1, Plugin.Instance?.Configuration.CacheDurationHours ?? 6);
 
     /// <summary>
-    /// Gets the TMDb ids of the currently trending movies, in TMDb's trending order.
+    /// The TMDb image base URL. Poster paths returned by the API are relative to this.
+    /// </summary>
+    private const string TmdbImageBaseUrl = "https://image.tmdb.org/t/p/";
+
+    /// <summary>
+    /// The single poster size requested for missing-title stubs, kept small so stubs stay lightweight.
+    /// </summary>
+    private const string TmdbPosterSize = "w342";
+
+    /// <summary>
+    /// Builds the single-size poster URL for a TMDb poster path, or null when there is no poster.
+    /// </summary>
+    /// <param name="posterPath">The source-relative poster path.</param>
+    /// <returns>The absolute poster URL, or null.</returns>
+    public static string? BuildPosterUrl(string? posterPath)
+    {
+        if (string.IsNullOrWhiteSpace(posterPath))
+        {
+            return null;
+        }
+
+        return TmdbImageBaseUrl + TmdbPosterSize + posterPath;
+    }
+
+    /// <summary>
+    /// Gets the currently trending movies, in TMDb's trending order.
     /// </summary>
     /// <param name="timeWindow">The window over which popularity is measured.</param>
     /// <param name="pages">The number of result pages to fetch.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <param name="force">Whether to bypass the cache and refetch from TMDb.</param>
-    /// <returns>The trending movie TMDb ids.</returns>
-    public Task<IReadOnlyList<int>> GetTrendingMovieIdsAsync(TimeWindow timeWindow, int pages, CancellationToken cancellationToken, bool force = false)
+    /// <returns>The trending movies with their title, year and poster.</returns>
+    public Task<IReadOnlyList<TmdbRankedTitle>> GetTrendingMovieTitlesAsync(TimeWindow timeWindow, int pages, CancellationToken cancellationToken, bool force = false)
     {
-        return GetListIdsAsync(
+        return GetListTitlesAsync(
             $"trending-movies-{timeWindow}-{pages.ToString(CultureInfo.InvariantCulture)}",
             async page => (await TmDbClient.GetTrendingMoviesAsync(timeWindow, page, cancellationToken: cancellationToken)
-                .ConfigureAwait(false))?.Results?.Select(result => result.Id),
+                .ConfigureAwait(false))?.Results?.Select(result => new TmdbRankedTitle
+                {
+                    Id = result.Id,
+                    Title = result.Title,
+                    Year = result.ReleaseDate?.Year,
+                    PosterPath = result.PosterPath
+                }),
             pages,
             force);
     }
 
     /// <summary>
-    /// Gets the TMDb ids of the currently trending tv shows, in TMDb's trending order.
+    /// Gets the currently trending tv shows, in TMDb's trending order.
     /// </summary>
     /// <param name="timeWindow">The window over which popularity is measured.</param>
     /// <param name="pages">The number of result pages to fetch.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <param name="force">Whether to bypass the cache and refetch from TMDb.</param>
-    /// <returns>The trending tv show TMDb ids.</returns>
-    public Task<IReadOnlyList<int>> GetTrendingSeriesIdsAsync(TimeWindow timeWindow, int pages, CancellationToken cancellationToken, bool force = false)
+    /// <returns>The trending tv shows with their title, year and poster.</returns>
+    public Task<IReadOnlyList<TmdbRankedTitle>> GetTrendingSeriesTitlesAsync(TimeWindow timeWindow, int pages, CancellationToken cancellationToken, bool force = false)
     {
-        return GetListIdsAsync(
+        return GetListTitlesAsync(
             $"trending-series-{timeWindow}-{pages.ToString(CultureInfo.InvariantCulture)}",
             async page => (await TmDbClient.GetTrendingTvAsync(timeWindow, page, cancellationToken: cancellationToken)
-                .ConfigureAwait(false))?.Results?.Select(result => result.Id),
+                .ConfigureAwait(false))?.Results?.Select(result => new TmdbRankedTitle
+                {
+                    Id = result.Id,
+                    Title = result.Name,
+                    Year = result.FirstAirDate?.Year,
+                    PosterPath = result.PosterPath
+                }),
             pages,
             force);
     }
 
     /// <summary>
-    /// Gets the TMDb ids of the highest rated movies of all time, best first.
+    /// Gets the highest rated movies of all time, best first.
     /// </summary>
     /// <param name="pages">The number of result pages to fetch.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <param name="force">Whether to bypass the cache and refetch from TMDb.</param>
-    /// <returns>The top rated movie TMDb ids.</returns>
-    public Task<IReadOnlyList<int>> GetTopRatedMovieIdsAsync(int pages, CancellationToken cancellationToken, bool force = false)
+    /// <returns>The top rated movies with their title, year and poster.</returns>
+    public Task<IReadOnlyList<TmdbRankedTitle>> GetTopRatedMovieTitlesAsync(int pages, CancellationToken cancellationToken, bool force = false)
     {
-        return GetListIdsAsync(
+        return GetListTitlesAsync(
             $"toprated-movies-{pages.ToString(CultureInfo.InvariantCulture)}",
             async page => (await TmDbClient.GetMovieTopRatedListAsync(page: page, cancellationToken: cancellationToken)
-                .ConfigureAwait(false))?.Results?.Select(result => result.Id),
+                .ConfigureAwait(false))?.Results?.Select(result => new TmdbRankedTitle
+                {
+                    Id = result.Id,
+                    Title = result.Title,
+                    Year = result.ReleaseDate?.Year,
+                    PosterPath = result.PosterPath
+                }),
             pages,
             force);
     }
 
     /// <summary>
-    /// Gets the TMDb ids of the highest rated tv shows of all time, best first.
+    /// Gets the highest rated tv shows of all time, best first.
     /// </summary>
     /// <param name="pages">The number of result pages to fetch.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <param name="force">Whether to bypass the cache and refetch from TMDb.</param>
-    /// <returns>The top rated tv show TMDb ids.</returns>
-    public Task<IReadOnlyList<int>> GetTopRatedSeriesIdsAsync(int pages, CancellationToken cancellationToken, bool force = false)
+    /// <returns>The top rated tv shows with their title, year and poster.</returns>
+    public Task<IReadOnlyList<TmdbRankedTitle>> GetTopRatedSeriesTitlesAsync(int pages, CancellationToken cancellationToken, bool force = false)
     {
-        return GetListIdsAsync(
+        return GetListTitlesAsync(
             $"toprated-series-{pages.ToString(CultureInfo.InvariantCulture)}",
             async page => (await TmDbClient.GetTvShowTopRatedAsync(page: page, cancellationToken: cancellationToken)
-                .ConfigureAwait(false))?.Results?.Select(result => result.Id),
+                .ConfigureAwait(false))?.Results?.Select(result => new TmdbRankedTitle
+                {
+                    Id = result.Id,
+                    Title = result.Name,
+                    Year = result.FirstAirDate?.Year,
+                    PosterPath = result.PosterPath
+                }),
             pages,
             force);
     }
@@ -185,10 +234,10 @@ public sealed class TmdbDiscoverClient : IDisposable
         var pages = PagesToScan;
         var trendingWindow = TrendingWeekly ? TimeWindow.Week : TimeWindow.Day;
 
-        await GetTrendingMovieIdsAsync(trendingWindow, pages, cancellationToken, force).ConfigureAwait(false);
-        await GetTrendingSeriesIdsAsync(trendingWindow, pages, cancellationToken, force).ConfigureAwait(false);
-        await GetTopRatedMovieIdsAsync(pages, cancellationToken, force).ConfigureAwait(false);
-        await GetTopRatedSeriesIdsAsync(pages, cancellationToken, force).ConfigureAwait(false);
+        await GetTrendingMovieTitlesAsync(trendingWindow, pages, cancellationToken, force).ConfigureAwait(false);
+        await GetTrendingSeriesTitlesAsync(trendingWindow, pages, cancellationToken, force).ConfigureAwait(false);
+        await GetTopRatedMovieTitlesAsync(pages, cancellationToken, force).ConfigureAwait(false);
+        await GetTopRatedSeriesTitlesAsync(pages, cancellationToken, force).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -344,27 +393,27 @@ public sealed class TmdbDiscoverClient : IDisposable
     }
 
     /// <summary>
-    /// Fetches an ordered, de-duplicated list of TMDb ids by paging a TMDb list endpoint.
+    /// Fetches an ordered, de-duplicated list of ranked titles by paging a TMDb list endpoint.
     /// </summary>
-    private async Task<IReadOnlyList<int>> GetListIdsAsync(
+    private async Task<IReadOnlyList<TmdbRankedTitle>> GetListTitlesAsync(
         string cacheKey,
-        Func<int, Task<IEnumerable<int>?>> fetchPage,
+        Func<int, Task<IEnumerable<TmdbRankedTitle>?>> fetchPage,
         int pages,
         bool force = false)
     {
-        if (!force && _memoryCache.TryGetValue(cacheKey, out IReadOnlyList<int>? cachedIds) && cachedIds is not null)
+        if (!force && _memoryCache.TryGetValue(cacheKey, out IReadOnlyList<TmdbRankedTitle>? cachedTitles) && cachedTitles is not null)
         {
-            return cachedIds;
+            return cachedTitles;
         }
 
         if (!HasApiKey)
         {
-            return Array.Empty<int>();
+            return Array.Empty<TmdbRankedTitle>();
         }
 
         // Fetched concurrently: paging these one at a time costs roughly ten seconds for a
         // fifteen page list, which is long enough for a user to notice on a cold cache.
-        var pageTasks = new Task<IEnumerable<int>?>[pages];
+        var pageTasks = new Task<IEnumerable<TmdbRankedTitle>?>[pages];
         for (var page = 0; page < pages; page++)
         {
             pageTasks[page] = fetchPage(page + 1);
@@ -374,29 +423,29 @@ public sealed class TmdbDiscoverClient : IDisposable
 
         // Ranking depends on order, so results are consumed in page order rather than completion
         // order.
-        var ids = new List<int>();
+        var titles = new List<TmdbRankedTitle>();
         var seen = new HashSet<int>();
-        foreach (var pageIds in pageResults)
+        foreach (var pageTitles in pageResults)
         {
-            if (pageIds is null)
+            if (pageTitles is null)
             {
                 continue;
             }
 
-            foreach (var id in pageIds)
+            foreach (var title in pageTitles)
             {
-                if (seen.Add(id))
+                if (seen.Add(title.Id))
                 {
-                    ids.Add(id);
+                    titles.Add(title);
                 }
             }
         }
 
-        if (ids.Count > 0)
+        if (titles.Count > 0)
         {
-            _memoryCache.Set(cacheKey, (IReadOnlyList<int>)ids, TimeSpan.FromHours(CacheDurationHours));
+            _memoryCache.Set(cacheKey, (IReadOnlyList<TmdbRankedTitle>)titles, TimeSpan.FromHours(CacheDurationHours));
         }
 
-        return ids;
+        return titles;
     }
 }

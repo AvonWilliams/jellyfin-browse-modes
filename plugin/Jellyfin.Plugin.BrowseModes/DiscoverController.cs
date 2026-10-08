@@ -48,6 +48,11 @@ public class DiscoverController : ControllerBase
     /// </summary>
     private const string AdministratorRole = "Administrator";
 
+    /// <summary>
+    /// The default ranked data source, and the only one implemented in this phase.
+    /// </summary>
+    private const string DefaultSource = "tmdb";
+
     private readonly IUserManager _userManager;
     private readonly ILibraryManager _libraryManager;
     private readonly IDtoService _dtoService;
@@ -73,113 +78,145 @@ public class DiscoverController : ControllerBase
     }
 
     /// <summary>
-    /// Gets trending movies that are present in the library.
+    /// Gets trending movies that are present in the library, plus optional missing-title stubs.
     /// </summary>
     /// <param name="userId">Optional. Filter by user id, and attach user data.</param>
     /// <param name="parentId">Optional. Specify this to localize the search to a specific library.</param>
     /// <param name="fields">Optional. Comma delimited list of fields to return.</param>
     /// <param name="limit">Optional. The maximum number of items to return.</param>
     /// <param name="weekly">Optional. Measure popularity over a week rather than a day.</param>
+    /// <param name="source">Optional. The ranked data source; only "tmdb" is implemented.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <response code="200">Trending movies returned.</response>
-    /// <returns>The trending movies available locally.</returns>
+    /// <returns>The trending movies available locally, plus missing-title stubs.</returns>
     [HttpGet("Trending/Movies")]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    public async Task<ActionResult<QueryResult<BaseItemDto>>> GetTrendingMovies(
+    public async Task<ActionResult<DiscoverRankedResult>> GetTrendingMovies(
         [FromQuery] Guid? userId,
         [FromQuery] Guid? parentId,
         [FromQuery] string? fields,
         [FromQuery] int limit = 24,
         [FromQuery] bool? weekly = null,
+        [FromQuery] string? source = null,
         CancellationToken cancellationToken = default)
     {
+        var resolvedSource = ResolveSource(source);
+        if (!IsSupportedSource(resolvedSource))
+        {
+            return Ok(new DiscoverRankedResult { Source = resolvedSource });
+        }
+
         var timeWindow = (weekly ?? TmdbDiscoverClient.TrendingWeekly) ? TimeWindow.Week : TimeWindow.Day;
-        var tmdbIds = await _discoverClient
-            .GetTrendingMovieIdsAsync(timeWindow, TmdbDiscoverClient.PagesToScan, cancellationToken)
+        var titles = await _discoverClient
+            .GetTrendingMovieTitlesAsync(timeWindow, TmdbDiscoverClient.PagesToScan, cancellationToken)
             .ConfigureAwait(false);
 
-        return GetLocalItemsForTmdbIds(tmdbIds, BaseItemKind.Movie, userId, parentId, ParseFields(fields), limit, TmdbDiscoverClient.TrendingMaxRank);
+        return BuildRankedResult(resolvedSource, titles, BaseItemKind.Movie, userId, parentId, ParseFields(fields), limit, TmdbDiscoverClient.TrendingMaxRank);
     }
 
     /// <summary>
-    /// Gets trending shows that are present in the library.
+    /// Gets trending shows that are present in the library, plus optional missing-title stubs.
     /// </summary>
     /// <param name="userId">Optional. Filter by user id, and attach user data.</param>
     /// <param name="parentId">Optional. Specify this to localize the search to a specific library.</param>
     /// <param name="fields">Optional. Comma delimited list of fields to return.</param>
     /// <param name="limit">Optional. The maximum number of items to return.</param>
     /// <param name="weekly">Optional. Measure popularity over a week rather than a day.</param>
+    /// <param name="source">Optional. The ranked data source; only "tmdb" is implemented.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <response code="200">Trending shows returned.</response>
-    /// <returns>The trending shows available locally.</returns>
+    /// <returns>The trending shows available locally, plus missing-title stubs.</returns>
     [HttpGet("Trending/Shows")]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    public async Task<ActionResult<QueryResult<BaseItemDto>>> GetTrendingShows(
+    public async Task<ActionResult<DiscoverRankedResult>> GetTrendingShows(
         [FromQuery] Guid? userId,
         [FromQuery] Guid? parentId,
         [FromQuery] string? fields,
         [FromQuery] int limit = 24,
         [FromQuery] bool? weekly = null,
+        [FromQuery] string? source = null,
         CancellationToken cancellationToken = default)
     {
+        var resolvedSource = ResolveSource(source);
+        if (!IsSupportedSource(resolvedSource))
+        {
+            return Ok(new DiscoverRankedResult { Source = resolvedSource });
+        }
+
         var timeWindow = (weekly ?? TmdbDiscoverClient.TrendingWeekly) ? TimeWindow.Week : TimeWindow.Day;
-        var tmdbIds = await _discoverClient
-            .GetTrendingSeriesIdsAsync(timeWindow, TmdbDiscoverClient.PagesToScan, cancellationToken)
+        var titles = await _discoverClient
+            .GetTrendingSeriesTitlesAsync(timeWindow, TmdbDiscoverClient.PagesToScan, cancellationToken)
             .ConfigureAwait(false);
 
-        return GetLocalItemsForTmdbIds(tmdbIds, BaseItemKind.Series, userId, parentId, ParseFields(fields), limit, TmdbDiscoverClient.TrendingMaxRank);
+        return BuildRankedResult(resolvedSource, titles, BaseItemKind.Series, userId, parentId, ParseFields(fields), limit, TmdbDiscoverClient.TrendingMaxRank);
     }
 
     /// <summary>
-    /// Gets the highest rated movies of all time that are present in the library.
+    /// Gets the highest rated movies of all time that are present in the library, plus stubs.
     /// </summary>
     /// <param name="userId">Optional. Filter by user id, and attach user data.</param>
     /// <param name="parentId">Optional. Specify this to localize the search to a specific library.</param>
     /// <param name="fields">Optional. Comma delimited list of fields to return.</param>
     /// <param name="limit">Optional. The maximum number of items to return.</param>
+    /// <param name="source">Optional. The ranked data source; only "tmdb" is implemented.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <response code="200">Top rated movies returned.</response>
-    /// <returns>The top rated movies available locally.</returns>
+    /// <returns>The top rated movies available locally, plus missing-title stubs.</returns>
     [HttpGet("TopRated/Movies")]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    public async Task<ActionResult<QueryResult<BaseItemDto>>> GetTopRatedMovies(
+    public async Task<ActionResult<DiscoverRankedResult>> GetTopRatedMovies(
         [FromQuery] Guid? userId,
         [FromQuery] Guid? parentId,
         [FromQuery] string? fields,
         [FromQuery] int limit = 24,
+        [FromQuery] string? source = null,
         CancellationToken cancellationToken = default)
     {
-        var tmdbIds = await _discoverClient
-            .GetTopRatedMovieIdsAsync(TmdbDiscoverClient.PagesToScan, cancellationToken)
+        var resolvedSource = ResolveSource(source);
+        if (!IsSupportedSource(resolvedSource))
+        {
+            return Ok(new DiscoverRankedResult { Source = resolvedSource });
+        }
+
+        var titles = await _discoverClient
+            .GetTopRatedMovieTitlesAsync(TmdbDiscoverClient.PagesToScan, cancellationToken)
             .ConfigureAwait(false);
 
-        return GetLocalItemsForTmdbIds(tmdbIds, BaseItemKind.Movie, userId, parentId, ParseFields(fields), limit, TmdbDiscoverClient.TopRatedMaxRank);
+        return BuildRankedResult(resolvedSource, titles, BaseItemKind.Movie, userId, parentId, ParseFields(fields), limit, TmdbDiscoverClient.TopRatedMaxRank);
     }
 
     /// <summary>
-    /// Gets the highest rated shows of all time that are present in the library.
+    /// Gets the highest rated shows of all time that are present in the library, plus stubs.
     /// </summary>
     /// <param name="userId">Optional. Filter by user id, and attach user data.</param>
     /// <param name="parentId">Optional. Specify this to localize the search to a specific library.</param>
     /// <param name="fields">Optional. Comma delimited list of fields to return.</param>
     /// <param name="limit">Optional. The maximum number of items to return.</param>
+    /// <param name="source">Optional. The ranked data source; only "tmdb" is implemented.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <response code="200">Top rated shows returned.</response>
-    /// <returns>The top rated shows available locally.</returns>
+    /// <returns>The top rated shows available locally, plus missing-title stubs.</returns>
     [HttpGet("TopRated/Shows")]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    public async Task<ActionResult<QueryResult<BaseItemDto>>> GetTopRatedShows(
+    public async Task<ActionResult<DiscoverRankedResult>> GetTopRatedShows(
         [FromQuery] Guid? userId,
         [FromQuery] Guid? parentId,
         [FromQuery] string? fields,
         [FromQuery] int limit = 24,
+        [FromQuery] string? source = null,
         CancellationToken cancellationToken = default)
     {
-        var tmdbIds = await _discoverClient
-            .GetTopRatedSeriesIdsAsync(TmdbDiscoverClient.PagesToScan, cancellationToken)
+        var resolvedSource = ResolveSource(source);
+        if (!IsSupportedSource(resolvedSource))
+        {
+            return Ok(new DiscoverRankedResult { Source = resolvedSource });
+        }
+
+        var titles = await _discoverClient
+            .GetTopRatedSeriesTitlesAsync(TmdbDiscoverClient.PagesToScan, cancellationToken)
             .ConfigureAwait(false);
 
-        return GetLocalItemsForTmdbIds(tmdbIds, BaseItemKind.Series, userId, parentId, ParseFields(fields), limit, TmdbDiscoverClient.TopRatedMaxRank);
+        return BuildRankedResult(resolvedSource, titles, BaseItemKind.Series, userId, parentId, ParseFields(fields), limit, TmdbDiscoverClient.TopRatedMaxRank);
     }
 
     /// <summary>
@@ -252,11 +289,43 @@ public class DiscoverController : ControllerBase
     }
 
     /// <summary>
-    /// Resolves a set of TMDb ids to local library items, preserving the order they were given in.
-    /// <paramref name="maxRank"/> is the lowest 1-based TMDb position to include; 0 means no cutoff.
+    /// Resolves the requested source name to a normalized value, defaulting to "tmdb".
     /// </summary>
-    private ActionResult<QueryResult<BaseItemDto>> GetLocalItemsForTmdbIds(
-        IReadOnlyList<int> tmdbIds,
+    private static string ResolveSource(string? source)
+    {
+        var value = source?.Trim().ToLowerInvariant();
+        return string.IsNullOrEmpty(value) ? DefaultSource : value;
+    }
+
+    /// <summary>
+    /// Returns whether a source is both enabled in configuration and implemented. Phase 2
+    /// implements only TMDb; every other name is accepted but returns an empty result so a
+    /// client can render its empty state. Adding a source later means enabling it here and
+    /// wiring its fetch in the ranked endpoints.
+    /// </summary>
+    private static bool IsSupportedSource(string source)
+    {
+        var enabled = Plugin.Instance?.Configuration.EnabledSources ?? new List<string> { DefaultSource };
+        return source.Equals(DefaultSource, StringComparison.OrdinalIgnoreCase)
+            && enabled.Any(s => s.Equals(DefaultSource, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool ShowMissing => Plugin.Instance?.Configuration.ShowMissing ?? true;
+
+    private static int MaxMissing => Math.Max(0, Plugin.Instance?.Configuration.MaxMissing ?? 10);
+
+    /// <summary>
+    /// Resolves a set of ranked titles to a discover result: the local library items in source
+    /// order, plus missing-title stubs for titles not owned locally.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="maxRank"/> is the lowest 1-based source position to include; 0 means no
+    /// cutoff. Stubs honour the same cutoff and the global missing cap, and are never written to
+    /// the library.
+    /// </remarks>
+    private DiscoverRankedResult BuildRankedResult(
+        string source,
+        IReadOnlyList<TmdbRankedTitle> titles,
         BaseItemKind itemKind,
         Guid? userId,
         Guid? parentId,
@@ -278,16 +347,16 @@ public class DiscoverController : ControllerBase
             Fields = fields.Contains(ItemFields.ProviderIds) ? fields : [.. fields, ItemFields.ProviderIds]
         };
 
-        if (tmdbIds.Count == 0)
+        if (titles.Count == 0)
         {
-            return Ok(new QueryResult<BaseItemDto>(Array.Empty<BaseItemDto>()));
+            return new DiscoverRankedResult { Source = source };
         }
 
-        // Position in TMDb's response is the ranking, and it is what the caller expects to see.
+        // Position in the source's response is the ranking, and it is what the caller expects.
         var rankByTmdbId = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (position, tmdbId) in tmdbIds.Index())
+        foreach (var (position, title) in titles.Index())
         {
-            rankByTmdbId.TryAdd(tmdbId.ToString(CultureInfo.InvariantCulture), position);
+            rankByTmdbId.TryAdd(title.Id.ToString(CultureInfo.InvariantCulture), position);
         }
 
         var query = new InternalItemsQuery(user)
@@ -304,9 +373,24 @@ public class DiscoverController : ControllerBase
 
         var items = _libraryManager.GetItemList(query);
 
-        var ranked = items
+        var matched = items
             .Select(item => (Item: item, Rank: GetRank(item, rankByTmdbId)))
-            .Where(entry => entry.Rank >= 0 && (maxRank <= 0 || entry.Rank < maxRank))
+            .Where(entry => entry.Rank >= 0)
+            .ToArray();
+
+        // Every library item that matches the source is "owned", regardless of the rank cutoff
+        // or the item limit, so a stub is only ever emitted for a title genuinely absent.
+        var owned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (item, _) in matched)
+        {
+            if (item.TryGetProviderId(MetadataProviders.Tmdb, out var tmdbId))
+            {
+                owned.Add(tmdbId);
+            }
+        }
+
+        var ranked = matched
+            .Where(entry => maxRank <= 0 || entry.Rank < maxRank)
             .OrderBy(entry => entry.Rank)
             .Take(limit)
             .ToArray();
@@ -315,13 +399,67 @@ public class DiscoverController : ControllerBase
 
         // Surface each item's position in the source list rather than its position among the
         // items that happened to match. IndexNumber is unused for movies and series, so carrying
-        // it there keeps the response a plain QueryResult the client already understands.
+        // it there keeps the response a plain list the client already understands.
         for (var i = 0; i < dtos.Count && i < ranked.Length; i++)
         {
             dtos[i].IndexNumber = ranked[i].Rank + 1;
         }
 
-        return Ok(new QueryResult<BaseItemDto>(dtos));
+        return new DiscoverRankedResult
+        {
+            Source = source,
+            Items = dtos.ToList(),
+            Missing = BuildMissingTitles(source, titles, owned, rankByTmdbId, maxRank)
+        };
+    }
+
+    /// <summary>
+    /// Builds the missing-title stubs: source-ranked titles not owned locally, under the global
+    /// cap and the same rank cutoff applied to local items.
+    /// </summary>
+    private static List<MissingTitleDto> BuildMissingTitles(
+        string source,
+        IReadOnlyList<TmdbRankedTitle> titles,
+        HashSet<string> owned,
+        Dictionary<string, int> rankByTmdbId,
+        int maxRank)
+    {
+        if (!ShowMissing || MaxMissing <= 0)
+        {
+            return new List<MissingTitleDto>();
+        }
+
+        var missing = new List<MissingTitleDto>(MaxMissing);
+        foreach (var title in titles)
+        {
+            if (missing.Count >= MaxMissing)
+            {
+                break;
+            }
+
+            var id = title.Id.ToString(CultureInfo.InvariantCulture);
+            if (owned.Contains(id))
+            {
+                continue;
+            }
+
+            if (!rankByTmdbId.TryGetValue(id, out var rank) || (maxRank > 0 && rank >= maxRank))
+            {
+                continue;
+            }
+
+            missing.Add(new MissingTitleDto
+            {
+                Source = source,
+                Rank = rank + 1,
+                Title = title.Title ?? string.Empty,
+                Year = title.Year,
+                ProviderIds = new Dictionary<string, string> { { MetadataProviders.Tmdb.ToString(), id } },
+                PosterUrl = TmdbDiscoverClient.BuildPosterUrl(title.PosterPath) ?? string.Empty
+            });
+        }
+
+        return missing;
     }
 
     /// <summary>
