@@ -43,15 +43,32 @@ Jellyfin version, downloads the latest plugin + web bundle releases, and applies
 Jellyfin, applying the changes, then starting it again. Safe to re-run: it skips anything already
 up to date.
 
-```bash
-# native (apt/LXC) — run as root
-sudo ./install-browse-modes.sh
+**curl**
 
-# Docker
-./install-browse-modes.sh --docker <container-name>
+Run directly:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/AvonWilliams/jellyfin-browse-modes/refs/heads/main/install-browse-modes.sh | bash
 ```
 
-Use `--plugin-only` / `--web-only` to apply just one half. See `--help` for the rest.
+Or download, inspect, then run:
+
+```bash
+curl -fsSL -o install-browse-modes.sh https://raw.githubusercontent.com/AvonWilliams/jellyfin-browse-modes/refs/heads/main/install-browse-modes.sh
+chmod +x install-browse-modes.sh
+sudo ./install-browse-modes.sh
+```
+
+**wget**
+
+Run directly:
+
+```bash
+wget -qO- https://raw.githubusercontent.com/AvonWilliams/jellyfin-browse-modes/refs/heads/main/install-browse-modes.sh | bash
+```
+
+On Docker, append `--docker <container-name>` (and drop `sudo`). Use `--plugin-only` / `--web-only`
+to apply just one half. See `--help` for the rest.
 
 ### 1. The plugin
 
