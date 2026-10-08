@@ -121,7 +121,7 @@ Full step-by-step instructions, including enabling ADB on the TV, are in the
 
 It installs **alongside** the official app rather than replacing it, so your existing setup keeps
 working. Source: [AvonWilliams/jellyfin-androidtv](https://github.com/AvonWilliams/jellyfin-androidtv)
-(`browse-modes` branch).
+(`main` branch).
 
 ## Documentation
 
