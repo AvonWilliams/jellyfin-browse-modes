@@ -36,6 +36,23 @@ Pick the clients you care about:
 
 ## Install
 
+### Quick install / update (script)
+
+The repo ships [`install-browse-modes.sh`](install-browse-modes.sh), which detects your server's
+Jellyfin version, downloads the latest plugin + web bundle releases, and applies them — stopping
+Jellyfin, applying the changes, then starting it again. Safe to re-run: it skips anything already
+up to date.
+
+```bash
+# native (apt/LXC) — run as root
+sudo ./install-browse-modes.sh
+
+# Docker
+./install-browse-modes.sh --docker <container-name>
+```
+
+Use `--plugin-only` / `--web-only` to apply just one half. See `--help` for the rest.
+
 ### 1. The plugin
 
 Dashboard → Plugins → Repositories → **+**, and add:
