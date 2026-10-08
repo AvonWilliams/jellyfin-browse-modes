@@ -9,6 +9,22 @@
         "imageUrl": "",
         "versions": [
             {
+                "version": "2.1.0.0",
+                "changelog": "Browse-modes restructure: multi-source ranked lists with missing-title stubs and a configurable show-missing default.",
+                "targetAbi": "12.1.0.0",
+                "sourceUrl": "https://github.com/AvonWilliams/jellyfin-browse-modes/releases/download/v2.1.0.0/browse-modes_2.1.0.0_12.1.0.zip",
+                "checksum": "14f3c76eb741b6b40f08d911b3fabea7",
+                "timestamp": "2026-10-08T14:03:00Z"
+            },
+            {
+                "version": "2.1.0.0",
+                "changelog": "Browse-modes restructure: multi-source ranked lists with missing-title stubs and a configurable show-missing default.",
+                "targetAbi": "12.0.0.0",
+                "sourceUrl": "https://github.com/AvonWilliams/jellyfin-browse-modes/releases/download/v2.1.0.0/browse-modes_2.1.0.0_12.0.0.zip",
+                "checksum": "247b76620cd4ca3bb056aeab4ac552f8",
+                "timestamp": "2026-10-08T14:03:00Z"
+            },
+            {
                 "version": "2.0.3.0",
                 "changelog": "Force refresh of discover lists, configurable Trending window (week/day), pre-baked picker counts.",
                 "targetAbi": "12.1.0.0",
