@@ -227,6 +227,8 @@ if [ "$plugin_update" -eq 1 ]; then
     rm -rf "$plugin_dir/Browse Modes_"*
     mkdir -p "$plugin_dir/$pdir"
     cp -a "$tmp/plugin_stage/." "$plugin_dir/$pdir/"
+    # Jellyfin runs as the jellyfin user and rewrites meta.json, so give it ownership.
+    chown -R jellyfin:jellyfin "$plugin_dir/$pdir"
     echo "Installed plugin to ${plugin_dir}/${pdir}"
   fi
 fi
@@ -242,6 +244,7 @@ if [ "$web_update" -eq 1 ]; then
     if [ -d "$web_dir" ]; then mv "$web_dir" "${web_dir}.bak.${ts}"; fi
     mkdir -p "$web_dir"
     cp -a "$tmp/web_stage/." "$web_dir/"
+    chown -R jellyfin:jellyfin "$web_dir"
     echo "Installed web bundle to ${web_dir} (backup: ${web_dir}.bak.${ts})"
   fi
 fi
