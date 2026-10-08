@@ -32,14 +32,26 @@ _Avoid_: Tab, page, section
 
 **Discover**:
 Plugin-backed endpoints (`/Discover/{Trending,TopRated}/{Movies,Shows}`) that return
-TMDb-ranked item lists matched against the user's library. Requires a TMDb API key.
+ranked item lists from a selected **source** (TMDb live; IMDb/Netflix/Letterboxd as snapshot
+lists), matched against the user's library. The TMDb source requires a TMDb API key.
 _Avoid_: API mode, remote list, TMDb mode
 
-**Vault**:
-A multi-level discovery hub that replaces the concept of "Collections." Contains editorial
-sub-categories (Awards, Seasonal, Franchises, Studios, Staff Picks, etc.), each of which
-may open further sub-categories or a filtered item list.
-_Avoid_: Collections, hub, showcase
+**Source**:
+A provider of ranked top lists — TMDb, IMDb, Netflix, Rotten Tomatoes, Letterboxd, Consensus.
+One source contributes one or more ranked lists.
+_Avoid_: Provider, feed, service
+
+**Source list** (top list):
+A ranked list of titles from a source — e.g. IMDb Top 250, Netflix Top 10, TMDb Trending.
+Stored in the plugin's SQLite database and refreshed at runtime by a scheduled task.
+_Avoid_: Chart, ranking, feed
+
+**Showcase**:
+A multi-level discovery hub. Contains editorial categories (Spotlight, Awards, Franchises,
+Studios, Seasonal, etc.), each of which may open further sub-categories or link to a filtered
+item list. The tile is visually distinct from other browse modes — centered below the main
+grid, larger, and carries a subtitle.
+_Avoid_: Vault, collections, hub
 
 **Mood**:
 A browse mode backed by Jellyfin tags, offering emotionally grouped entry points
@@ -56,6 +68,12 @@ _Avoid_: Themes, topics, subjects
 Unwatched items sorted by community rating. Renamed from Best Unseen.
 _Avoid_: Best Unseen, undiscovered, underrated
 
+**Showcase category**:
+A node in the Showcase navigation tree. Categories with children drill deeper; leaf
+categories carry a browse-mode target. Placeholder categories show a "coming soon"
+message until their content is wired up.
+_Avoid_: Sub-category, vault entry, showcase tile
+
 **Watch Again**:
 Previously played items sorted by play date. Renamed from Recently Played.
 _Avoid_: Recently Played, history, continue watching
@@ -66,7 +84,7 @@ _Avoid_: Recently Played, history, continue watching
 - A **browse mode** has exactly one navigation target: a **view**, sort/filter settings, or a **picker**.
 - A **picker** renders a secondary **tile** grid whose values come from `GET /Items/Filters` (Years, OfficialRatings).
 - **Discover** modes (Trending, Top Rated) require the plugin and a configured TMDb API key; every other browse mode works without the plugin.
-- **Vault** contains nested sub-categories, each of which may contain further sub-categories or link to a filtered item list.
+- **Showcase** opens a multi-level **showcase category** grid. Categories with children push deeper onto the navigation stack; leaf categories delegate to the existing **browse mode** navigation. **Studio** is wired up today; the rest are **placeholders**.
 - **Mood** and **Story Themes** are backed by Jellyfin tags — the browse mode filters items by the selected tag.
 - The plugin runs on the server and provides the **Discover** endpoints. The tile grid runs in the web and Android TV clients, which are patched forks of upstream Jellyfin.
 
@@ -80,9 +98,13 @@ _Avoid_: Recently Played, history, continue watching
 >
 > **Dev:** "Mood and Story Themes both use tags. How are they different?"
 > **Domain expert:** "Only in which tags they display and how they're weighted. Mood tags are emotional/aesthetic (Feel Good, Dark & Gritty). Story Theme tags are narrative/conceptual (Time Travel, Heists). The UI is the same — a picker grid like Genres — but Mood randomizes a subset on each visit, weighted toward commonly-used tags."
+>
+> **Dev:** "How does Showcase navigate differently from other browse modes?"
+> **Domain expert:** "Every other mode is either a direct link to a view or a single-level picker. Showcase is the only mode with multiple levels — clicking a **showcase category** with children pushes deeper onto the navigation stack, and a back button pops back up. A leaf category that has a `mode` delegates to the standard browse-mode navigation. Leaf categories without a `mode` are **placeholders** — they show a 'coming soon' message until content is wired up."
 
 ## Flagged ambiguities
 
-- "Category" was used in the v2.0 spec to mean both a **browse mode** tile and a **Vault** sub-category. Resolved: use **browse mode** for top-level tiles and **sub-category** for Vault children.
-- "Collections" meant Jellyfin's built-in Collections feature in the old UI, but the spec repurposes it to mean an editorial grouping inside **Vault**. Resolved: the new concept is called **Vault**; Jellyfin's built-in Collections are unrelated.
-- "More" was spec'd as a secondary tile page for low-frequency modes. Parked — the current tile count (13/12) fits comfortably without a second page.
+- "Category" was used in the v2.0 spec to mean both a **browse mode** tile and a **Showcase** child. Resolved: **browse mode** for top-level tiles and **showcase category** for Showcase children.
+- "Collections" meant Jellyfin's built-in Collections feature in the old UI, but the spec originally borrowed it to mean an editorial grouping. Resolved: the new concept is **Showcase** (formerly Vault); Jellyfin's built-in Collections are unrelated.
+- "More" was spec'd as a secondary tile page for low-frequency modes. Removed — changed direction, not doing this.
+- "Vault" was the original name for **Showcase**. Renamed because "Showcase" is more inviting and clearer about the feature's purpose.

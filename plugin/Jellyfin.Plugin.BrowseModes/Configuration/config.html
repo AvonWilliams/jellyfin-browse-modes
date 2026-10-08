@@ -70,15 +70,6 @@
                 </div>
 
                 <div class="inputContainer">
-                    <label class="inputLabel inputLabelUnfocused" for="TrendingWeekly">Trending window: This Week</label>
-                    <input id="TrendingWeekly" name="TrendingWeekly" type="checkbox" is="emby-checkbox" />
-                    <div class="fieldDescription">
-                        Checked measures popularity over the current week; unchecked over the
-                        current day (TMDb's site default).
-                    </div>
-                </div>
-
-                <div class="inputContainer">
                     <label class="inputLabel inputLabelUnfocused" for="TrendingMaxRank">Trending rank limit</label>
                     <input id="TrendingMaxRank" name="TrendingMaxRank" type="number" min="0" max="1000" step="1" is="emby-input" />
                     <div class="fieldDescription">
@@ -93,6 +84,25 @@
                     <div class="fieldDescription">
                         Only show titles in the top N positions of TMDb's top rated list. Leave 0
                         for no limit.
+                    </div>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="ShowMissing">Show missing titles</label>
+                    <input id="ShowMissing" name="ShowMissing" type="checkbox" is="emby-checkbox" />
+                    <div class="fieldDescription">
+                        Include titles from the ranked source that are not in your library, shown
+                        as dimmed "Coming soon" tiles. This is the server default; users can still
+                        hide them per view without changing it.
+                    </div>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="MaxMissing">Max missing titles</label>
+                    <input id="MaxMissing" name="MaxMissing" type="number" min="0" max="100" step="1" is="emby-input" />
+                    <div class="fieldDescription">
+                        The most missing titles to show per ranked view, across all sources. 0
+                        disables them.
                     </div>
                 </div>
 
@@ -119,25 +129,22 @@
             var pluginId = '0d5f6a1e-3b7c-4c62-9a4d-2e8f1b6c9a37';
 
             // Keys are the web client's BrowseMode enum values; labels are for this editor only.
+            // The home grid is six primary tiles followed by the "Browse by…" meta tiles.
             var ALL_MODES = [
                 { key: 'all', label: 'All' },
-                { key: 'newreleases', label: 'New Releases' },
-                { key: 'justadded', label: 'Just Added' },
                 { key: 'trending', label: 'Trending' },
                 { key: 'toprated', label: 'Top Rated' },
-                { key: 'genres', label: 'Genres' },
-                { key: 'decades', label: 'Decades' },
-                { key: 'criticspicks', label: "Critics' Picks" },
-                { key: 'bestunseen', label: 'Hidden Gems' },
-                { key: 'mood', label: 'Mood' },
-                { key: 'storythemes', label: 'Story Themes' },
-                { key: 'plotelements', label: 'Plot Elements' },
-                { key: 'worlds', label: 'Worlds' },
-                { key: 'styles', label: 'Styles' },
+                { key: 'newreleases', label: 'New Releases' },
+                { key: 'justadded', label: 'Just Added' },
                 { key: 'random', label: 'Random' },
-                { key: 'recentlyplayed', label: 'Watch Again' },
-                { key: 'studios', label: 'Studios / Networks' },
-                { key: 'agerating', label: 'Age Rating' }
+                { key: 'genres', label: 'Genres' },
+                { key: 'bymoodtone', label: 'Mood & Tone' },
+                { key: 'bystory', label: 'Story' },
+                { key: 'byworldstyle', label: 'World & Style' },
+                { key: 'bypeople', label: 'People' },
+                { key: 'bytime', label: 'Time' },
+                { key: 'byquality', label: 'Quality' },
+                { key: 'studios', label: 'Studios / Networks' }
             ];
 
             // The editor's working state: every mode, in display order, with an enabled flag.
@@ -222,7 +229,8 @@
                         document.querySelector('#CacheDurationHours').value = config.CacheDurationHours || 6;
                         document.querySelector('#TrendingMaxRank').value = config.TrendingMaxRank || 0;
                         document.querySelector('#TopRatedMaxRank').value = config.TopRatedMaxRank || 0;
-                        document.querySelector('#TrendingWeekly').checked = config.TrendingWeekly !== false;
+                        document.querySelector('#ShowMissing').checked = config.ShowMissing !== false;
+                        document.querySelector('#MaxMissing').value = (config.MaxMissing === undefined ? 10 : config.MaxMissing);
                         initModes(config.BrowseModeOrder);
                         renderTileEditor();
                         Dashboard.hideLoadingMsg();
@@ -239,7 +247,8 @@
                         config.CacheDurationHours = parseInt(document.querySelector('#CacheDurationHours').value, 10) || 6;
                         config.TrendingMaxRank = parseInt(document.querySelector('#TrendingMaxRank').value, 10) || 0;
                         config.TopRatedMaxRank = parseInt(document.querySelector('#TopRatedMaxRank').value, 10) || 0;
-                        config.TrendingWeekly = document.querySelector('#TrendingWeekly').checked;
+                        config.ShowMissing = document.querySelector('#ShowMissing').checked;
+                        config.MaxMissing = parseInt(document.querySelector('#MaxMissing').value, 10) || 0;
                         config.BrowseModeOrder = modes.filter(function (m) { return m.enabled; }).map(function (m) { return m.key; });
                         ApiClient.updatePluginConfiguration(pluginId, config).then(function (result) {
                             Dashboard.processPluginConfigurationUpdateResult(result);

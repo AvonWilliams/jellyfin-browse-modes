@@ -34,14 +34,6 @@ public class PluginConfiguration : BasePluginConfiguration
     public int CacheDurationHours { get; set; } = 6;
 
     /// <summary>
-    /// Gets or sets a value indicating whether Trending measures popularity over a week rather than a day.
-    /// </summary>
-    /// <remarks>
-    /// When true, Trending mirrors TMDb's "This Week" list; when false, it mirrors "Today".
-    /// </remarks>
-    public bool TrendingWeekly { get; set; } = true;
-
-    /// <summary>
     /// Gets or sets the lowest TMDb position to show in the Trending list. 0 means no cutoff.
     /// </summary>
     /// <remarks>
@@ -57,6 +49,34 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Position is 1-based, mirroring <see cref="TrendingMaxRank"/> for the all-time list.
     /// </remarks>
     public int TopRatedMaxRank { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether ranked discover lists include titles that are
+    /// not in the library, returned as external stubs clients render as "coming soon" tiles.
+    /// </summary>
+    /// <remarks>
+    /// This is the server-side default; clients may still hide missing titles per user without
+    /// changing this value.
+    /// </remarks>
+    public bool ShowMissing { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets the maximum number of missing titles to include per ranked view.
+    /// </summary>
+    /// <remarks>
+    /// Global and applies to every ranked source, so a single view never floods with stubs. 0
+    /// disables missing titles entirely.
+    /// </remarks>
+    public int MaxMissing { get; set; } = 10;
+
+    /// <summary>
+    /// Gets or sets the ranked data sources the plugin serves, in the order clients should offer them.
+    /// </summary>
+    /// <remarks>
+    /// Only "tmdb" is implemented in this phase; other names are accepted and returned to the
+    /// client but resolve to an empty result until their fetch is added.
+    /// </remarks>
+    public List<string> EnabledSources { get; set; } = new List<string> { "tmdb" };
 
     /// <summary>
     /// Gets or sets the browse-mode tile keys in display order. Keys not listed are hidden.
