@@ -1,7 +1,8 @@
 using System;
-using System.Collections.Concurrent;
 using System.IO;
 using System.Net.Http;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using MediaBrowser.Common.Configuration;
@@ -10,9 +11,9 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.BrowseModes;
 
 /// <summary>
-/// Caches poster images on the server so clients load them from Jellyfin rather than the source
-/// each time. Posters are fetched lazily — a client request triggers the download — and removed by
-/// a scheduled task when they go unserved.
+/// Caches poster images on the server. Each poster is fetched once — a client request triggers the
+/// download — and saved to a file named after its title spec, so later requests (across client
+/// refreshes and server restarts) serve the saved file without touching the source again.
 /// </summary>
 public sealed class PosterStore
 {
@@ -32,7 +33,6 @@ public sealed class PosterStore
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly TmdbDiscoverClient _discoverClient;
     private readonly ILogger<PosterStore> _logger;
-    private readonly ConcurrentDictionary<string, string?> _searchCache = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PosterStore"/> class.
@@ -62,7 +62,7 @@ public sealed class PosterStore
     /// <returns>The <c>/Discover/Posters/{key}</c> URL.</returns>
     public static string EncodeProxyUrl(string spec)
     {
-        var bytes = System.Text.Encoding.UTF8.GetBytes(spec);
+        var bytes = Encoding.UTF8.GetBytes(spec);
         var base64 = Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
         return "/Discover/Posters/" + base64;
     }
@@ -91,7 +91,7 @@ public sealed class PosterStore
 
         try
         {
-            spec = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(base64));
+            spec = Encoding.UTF8.GetString(Convert.FromBase64String(base64));
         }
         catch (FormatException)
         {
@@ -144,57 +144,39 @@ public sealed class PosterStore
     }
 
     /// <summary>
-    /// Downloads a poster on first use and returns its local file path, or null on failure.
+    /// Returns the local poster file for a fetch spec, downloading it on first use. The file is
+    /// named from the spec itself, so once saved it is served directly on every later request.
     /// </summary>
-    /// <param name="remoteUrl">The absolute source URL of the poster.</param>
+    /// <param name="spec">The fetch spec.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
-    /// <returns>The absolute local file path, or null.</returns>
-    public async Task<string?> GetOrDownloadAsync(string remoteUrl, CancellationToken cancellationToken)
+    /// <returns>The absolute local file path, or null on failure.</returns>
+    public async Task<string?> GetOrDownloadAsync(string spec, CancellationToken cancellationToken)
     {
-        var key = SanitizeKey(Path.GetFileName(new Uri(remoteUrl).AbsolutePath));
-        if (key is null)
+        var filePath = Path.Combine(_posterDirectory, ComputeKey(spec) + ".jpg");
+        if (File.Exists(filePath))
+        {
+            return filePath;
+        }
+
+        var remoteUrl = await ResolveRemoteUrlAsync(spec, cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrEmpty(remoteUrl))
         {
             return null;
         }
 
-        var filePath = Path.Combine(_posterDirectory, key);
-        if (!File.Exists(filePath))
+        try
         {
-            try
-            {
-                var client = _httpClientFactory.CreateClient();
-                var bytes = await client.GetByteArrayAsync(remoteUrl, cancellationToken).ConfigureAwait(false);
-                await File.WriteAllBytesAsync(filePath, bytes, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                _logger.LogWarning(ex, "Unable to cache poster {Url}", remoteUrl);
-                return null;
-            }
+            var client = _httpClientFactory.CreateClient();
+            var bytes = await client.GetByteArrayAsync(remoteUrl, cancellationToken).ConfigureAwait(false);
+            await File.WriteAllBytesAsync(filePath, bytes, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Unable to cache poster {Spec}", spec);
+            return null;
         }
 
         return filePath;
-    }
-
-    /// <summary>
-    /// Resolves a title to its poster URL via TMDb, caching the result in memory so repeated
-    /// requests (e.g. a hard refresh) do not re-run the search.
-    /// </summary>
-    /// <param name="title">The title to search for.</param>
-    /// <param name="year">The release year, when known.</param>
-    /// <param name="cancellationToken">The cancellation token.</param>
-    /// <returns>The remote poster URL, or null when no match.</returns>
-    public async Task<string?> ResolveRemoteUrlAsync(string title, int? year, CancellationToken cancellationToken)
-    {
-        var key = title + '\u001f' + (year?.ToString() ?? string.Empty);
-        if (_searchCache.TryGetValue(key, out var cached))
-        {
-            return cached;
-        }
-
-        var url = await _discoverClient.FindPosterUrlAsync(title, year, cancellationToken).ConfigureAwait(false);
-        _searchCache[key] = url;
-        return url;
     }
 
     /// <summary>
@@ -241,14 +223,30 @@ public sealed class PosterStore
         return removed;
     }
 
-    private static string? SanitizeKey(string? key)
+    private async Task<string?> ResolveRemoteUrlAsync(string spec, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(key))
+        if (spec.StartsWith(UrlPrefix, StringComparison.Ordinal))
         {
-            return null;
+            var url = spec.Substring(UrlPrefix.Length);
+            return IsAllowedPosterHost(url) ? url : null;
         }
 
-        var name = Path.GetFileName(key.Trim());
-        return string.IsNullOrEmpty(name) || name == "." || name == ".." ? null : name;
+        if (spec.StartsWith(SearchPrefix, StringComparison.Ordinal))
+        {
+            if (!TrySplitSearch(spec.Substring(SearchPrefix.Length), out var title, out var year))
+            {
+                return null;
+            }
+
+            return await _discoverClient.FindPosterUrlAsync(title, year, cancellationToken).ConfigureAwait(false);
+        }
+
+        return null;
+    }
+
+    private static string ComputeKey(string spec)
+    {
+        var hash = SHA1.HashData(Encoding.UTF8.GetBytes(spec));
+        return Convert.ToHexString(hash).ToLowerInvariant();
     }
 }

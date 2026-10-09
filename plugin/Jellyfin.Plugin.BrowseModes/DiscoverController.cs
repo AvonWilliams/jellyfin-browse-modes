@@ -311,35 +311,7 @@ public class DiscoverController : ControllerBase
             return NotFound();
         }
 
-        string? remoteUrl;
-        if (spec.StartsWith(PosterStore.UrlPrefix, StringComparison.Ordinal))
-        {
-            remoteUrl = spec.Substring(PosterStore.UrlPrefix.Length);
-            if (!PosterStore.IsAllowedPosterHost(remoteUrl))
-            {
-                return NotFound();
-            }
-        }
-        else if (spec.StartsWith(PosterStore.SearchPrefix, StringComparison.Ordinal))
-        {
-            if (!PosterStore.TrySplitSearch(spec.Substring(PosterStore.SearchPrefix.Length), out var title, out var year))
-            {
-                return NotFound();
-            }
-
-            remoteUrl = await _posterStore.ResolveRemoteUrlAsync(title, year, cancellationToken).ConfigureAwait(false);
-        }
-        else
-        {
-            return NotFound();
-        }
-
-        if (string.IsNullOrEmpty(remoteUrl))
-        {
-            return NotFound();
-        }
-
-        var path = await _posterStore.GetOrDownloadAsync(remoteUrl, cancellationToken).ConfigureAwait(false);
+        var path = await _posterStore.GetOrDownloadAsync(spec, cancellationToken).ConfigureAwait(false);
         if (path is null)
         {
             return NotFound();
