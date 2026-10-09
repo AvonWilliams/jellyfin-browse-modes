@@ -43,12 +43,15 @@ Jellyfin version, downloads the latest plugin + web bundle releases, and applies
 Jellyfin, applying the changes, then starting it again. Safe to re-run: it skips anything already
 up to date.
 
+Native installs need **root** — the script writes `/var/lib/jellyfin` and `/usr/share/jellyfin`,
+so run it with `sudo`. Docker installs use `--docker` instead and don't need root.
+
 **curl**
 
 Run directly:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/AvonWilliams/jellyfin-browse-modes/refs/heads/main/install-browse-modes.sh | bash
+curl -fsSL https://raw.githubusercontent.com/AvonWilliams/jellyfin-browse-modes/refs/heads/main/install-browse-modes.sh | sudo bash
 ```
 
 Or download, inspect, then run:
@@ -64,7 +67,7 @@ sudo ./install-browse-modes.sh
 Run directly:
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/AvonWilliams/jellyfin-browse-modes/refs/heads/main/install-browse-modes.sh | bash
+wget -qO- https://raw.githubusercontent.com/AvonWilliams/jellyfin-browse-modes/refs/heads/main/install-browse-modes.sh | sudo bash
 ```
 
 On Docker, append `--docker <container-name>` (and drop `sudo`). Use `--plugin-only` / `--web-only`
