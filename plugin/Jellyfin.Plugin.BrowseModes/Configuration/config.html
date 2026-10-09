@@ -30,6 +30,12 @@
             color: #fff;
             border-color: #00a4dc;
         }
+        .tabContent {
+            display: none;
+        }
+        .tabContent.active {
+            display: block;
+        }
     </style>
 </head>
 <body>
@@ -67,7 +73,7 @@
             </div>
 
             <form id="BrowseModesConfigForm">
-                <div class="tabContent" data-tab="tmdb">
+                <div class="tabContent active" data-tab="tmdb">
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="TmdbApiKey">TMDb API key</label>
                         <input id="TmdbApiKey" name="TmdbApiKey" type="text" is="emby-input" />
@@ -113,7 +119,7 @@
                     </div>
                 </div>
 
-                <div class="tabContent" data-tab="sources" hidden>
+                <div class="tabContent" data-tab="sources">
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused">Snapshot sources</label>
                         <div class="fieldDescription">
@@ -125,7 +131,7 @@
                     </div>
                 </div>
 
-                <div class="tabContent" data-tab="display" hidden>
+                <div class="tabContent" data-tab="display">
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="ShowMissing">Show missing titles</label>
                         <input id="ShowMissing" name="ShowMissing" type="checkbox" is="emby-checkbox" />
@@ -329,15 +335,18 @@
 
             function showTab(name) {
                 document.querySelectorAll('.tabContent').forEach(function (el) {
-                    el.hidden = el.getAttribute('data-tab') !== name;
+                    el.classList.toggle('active', el.getAttribute('data-tab') === name);
                 });
                 document.querySelectorAll('.tabButton').forEach(function (btn) {
                     btn.classList.toggle('active', btn.getAttribute('data-tab') === name);
                 });
             }
 
-            document.querySelectorAll('.tabButton').forEach(function (btn) {
-                btn.addEventListener('click', function () { showTab(btn.getAttribute('data-tab')); });
+            document.addEventListener('click', function (e) {
+                var btn = e.target.closest('.tabButton');
+                if (btn) {
+                    showTab(btn.getAttribute('data-tab'));
+                }
             });
 
             document.querySelector('#BrowseModesConfigPage')
