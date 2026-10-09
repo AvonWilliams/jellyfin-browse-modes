@@ -222,6 +222,10 @@ if [ "$plugin_update" -eq 1 ]; then
     # Plugin dir name contains a space; escape it for the container's sh.
     docker exec "$CONTAINER" sh -c 'rm -rf /config/plugins/Browse\ Modes_*'
     docker cp "$tmp/plugin_stage" "$CONTAINER:/config/plugins/${pdir}"
+    # docker cp preserves the host uid, which may not match the container's jellyfin
+    # user (uid 1000, no named user). Chown to the owner of /config so meta.json stays writable.
+    jf_owner=$(docker exec "$CONTAINER" sh -c 'stat -c "%u:%g" /config')
+    docker exec "$CONTAINER" chown -R "$jf_owner" "/config/plugins/${pdir}"
     echo "Installed plugin to container ${CONTAINER}:/config/plugins/${pdir}"
   else
     rm -rf "$plugin_dir/Browse Modes_"*
@@ -239,6 +243,9 @@ if [ "$web_update" -eq 1 ]; then
   if [ -n "$CONTAINER" ]; then
     docker exec "$CONTAINER" sh -c "mkdir -p /jellyfin; if [ -d /jellyfin/jellyfin-web ]; then mv /jellyfin/jellyfin-web /jellyfin/jellyfin-web.bak.${ts}; fi"
     docker cp "$tmp/web_stage" "$CONTAINER:/jellyfin/jellyfin-web"
+    # Same ownership fix as the plugin above.
+    jf_owner=$(docker exec "$CONTAINER" sh -c 'stat -c "%u:%g" /config')
+    docker exec "$CONTAINER" chown -R "$jf_owner" "/jellyfin/jellyfin-web"
     echo "Installed web bundle to container ${CONTAINER}:/jellyfin/jellyfin-web (backup: jellyfin-web.bak.${ts})"
   else
     if [ -d "$web_dir" ]; then mv "$web_dir" "${web_dir}.bak.${ts}"; fi
