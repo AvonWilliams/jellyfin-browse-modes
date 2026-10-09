@@ -294,6 +294,7 @@ public class DiscoverController : ControllerBase
     /// <returns>The poster image.</returns>
     [HttpGet("Posters/{key}")]
     [AllowAnonymous]
+    [ResponseCache(Duration = 86400, Location = ResponseCacheLocation.Any)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public IActionResult GetPoster([FromRoute] string key)
