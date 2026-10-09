@@ -144,22 +144,19 @@ public class DiscoverController : ControllerBase
         CancellationToken cancellationToken = default)
     {
         var resolvedSource = ResolveSource(source);
-        if (!IsSupportedSource(resolvedSource, SourceListKind.Trending))
+        // Snapshot sources are movie lists only; shows are served by TMDb alone.
+        if (!resolvedSource.Equals(DefaultSource, StringComparison.OrdinalIgnoreCase)
+            || !IsSupportedSource(resolvedSource, SourceListKind.Trending))
         {
             return Ok(new DiscoverRankedResult { Source = resolvedSource });
         }
 
-        if (resolvedSource.Equals(DefaultSource, StringComparison.OrdinalIgnoreCase))
-        {
-            var timeWindow = TimeWindow.Week;
-            var titles = await _discoverClient
-                .GetTrendingSeriesTitlesAsync(timeWindow, TmdbDiscoverClient.PagesToScan, cancellationToken)
-                .ConfigureAwait(false);
+        var timeWindow = TimeWindow.Week;
+        var titles = await _discoverClient
+            .GetTrendingSeriesTitlesAsync(timeWindow, TmdbDiscoverClient.PagesToScan, cancellationToken)
+            .ConfigureAwait(false);
 
-            return BuildRankedResult(resolvedSource, titles, BaseItemKind.Series, userId, parentId, ParseFields(fields), limit, TmdbDiscoverClient.TrendingMaxRank);
-        }
-
-        return BuildSnapshotRankedResult(resolvedSource, SourceListKind.Trending, BaseItemKind.Series, userId, parentId, ParseFields(fields), limit);
+        return BuildRankedResult(resolvedSource, titles, BaseItemKind.Series, userId, parentId, ParseFields(fields), limit, TmdbDiscoverClient.TrendingMaxRank);
     }
 
     /// <summary>
@@ -223,21 +220,18 @@ public class DiscoverController : ControllerBase
         CancellationToken cancellationToken = default)
     {
         var resolvedSource = ResolveSource(source);
-        if (!IsSupportedSource(resolvedSource, SourceListKind.TopRated))
+        // Snapshot sources are movie lists only; shows are served by TMDb alone.
+        if (!resolvedSource.Equals(DefaultSource, StringComparison.OrdinalIgnoreCase)
+            || !IsSupportedSource(resolvedSource, SourceListKind.TopRated))
         {
             return Ok(new DiscoverRankedResult { Source = resolvedSource });
         }
 
-        if (resolvedSource.Equals(DefaultSource, StringComparison.OrdinalIgnoreCase))
-        {
-            var titles = await _discoverClient
-                .GetTopRatedSeriesTitlesAsync(TmdbDiscoverClient.PagesToScan, cancellationToken)
-                .ConfigureAwait(false);
+        var titles = await _discoverClient
+            .GetTopRatedSeriesTitlesAsync(TmdbDiscoverClient.PagesToScan, cancellationToken)
+            .ConfigureAwait(false);
 
-            return BuildRankedResult(resolvedSource, titles, BaseItemKind.Series, userId, parentId, ParseFields(fields), limit, TmdbDiscoverClient.TopRatedMaxRank);
-        }
-
-        return BuildSnapshotRankedResult(resolvedSource, SourceListKind.TopRated, BaseItemKind.Series, userId, parentId, ParseFields(fields), limit);
+        return BuildRankedResult(resolvedSource, titles, BaseItemKind.Series, userId, parentId, ParseFields(fields), limit, TmdbDiscoverClient.TopRatedMaxRank);
     }
 
     /// <summary>
