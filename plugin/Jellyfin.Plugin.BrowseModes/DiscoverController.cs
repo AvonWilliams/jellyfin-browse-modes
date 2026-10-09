@@ -292,26 +292,60 @@ public class DiscoverController : ControllerBase
     }
 
     /// <summary>
-    /// Serves a cached poster image.
+    /// Serves a cached poster image, downloading it on first request.
     /// </summary>
     /// <param name="key">The poster key from the stored URL.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
     /// <response code="200">The poster image returned.</response>
-    /// <response code="404">The poster is not cached.</response>
+    /// <response code="404">The poster could not be resolved or fetched.</response>
     /// <returns>The poster image.</returns>
     [HttpGet("Posters/{key}")]
     [AllowAnonymous]
     [ResponseCache(Duration = 86400, Location = ResponseCacheLocation.Any)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public IActionResult GetPoster([FromRoute] string key)
+    public async Task<IActionResult> GetPoster([FromRoute] string key, CancellationToken cancellationToken)
     {
-        var path = _posterStore.GetFilePath(key);
+        if (!PosterStore.TryDecodeSpec(key, out var spec))
+        {
+            return NotFound();
+        }
+
+        string? remoteUrl;
+        if (spec.StartsWith(PosterStore.UrlPrefix, StringComparison.Ordinal))
+        {
+            remoteUrl = spec.Substring(PosterStore.UrlPrefix.Length);
+            if (!PosterStore.IsAllowedPosterHost(remoteUrl))
+            {
+                return NotFound();
+            }
+        }
+        else if (spec.StartsWith(PosterStore.SearchPrefix, StringComparison.Ordinal))
+        {
+            if (!PosterStore.TrySplitSearch(spec.Substring(PosterStore.SearchPrefix.Length), out var title, out var year))
+            {
+                return NotFound();
+            }
+
+            remoteUrl = await _discoverClient.FindPosterUrlAsync(title, year, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            return NotFound();
+        }
+
+        if (string.IsNullOrEmpty(remoteUrl))
+        {
+            return NotFound();
+        }
+
+        var path = await _posterStore.GetOrDownloadAsync(remoteUrl, cancellationToken).ConfigureAwait(false);
         if (path is null)
         {
             return NotFound();
         }
 
-        _posterStore.Touch(key);
+        _posterStore.Touch(path);
         return PhysicalFile(path, "image/jpeg");
     }
 

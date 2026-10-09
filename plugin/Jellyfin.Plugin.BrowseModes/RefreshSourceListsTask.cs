@@ -51,11 +51,11 @@ public class RefreshSourceListsTask : IScheduledTask
             Type = TaskTriggerInfoType.StartupTrigger
         };
 
-        // Daily; these are curated snapshot lists that change at most once a day.
+        // At midnight, after the source datasets have refreshed for the day.
         yield return new TaskTriggerInfo
         {
-            Type = TaskTriggerInfoType.IntervalTrigger,
-            IntervalTicks = TimeSpan.FromDays(1).Ticks
+            Type = TaskTriggerInfoType.DailyTrigger,
+            TimeOfDayTicks = TimeSpan.Zero.Ticks
         };
     }
 

@@ -35,8 +35,6 @@ public sealed class SnapshotListFetcher
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly SourceListStore _store;
-    private readonly TmdbDiscoverClient _discoverClient;
-    private readonly PosterStore _posterStore;
     private readonly ILogger<SnapshotListFetcher> _logger;
 
     /// <summary>
@@ -44,20 +42,14 @@ public sealed class SnapshotListFetcher
     /// </summary>
     /// <param name="httpClientFactory">Instance of the <see cref="IHttpClientFactory"/> interface.</param>
     /// <param name="store">Instance of <see cref="SourceListStore"/>.</param>
-    /// <param name="discoverClient">Instance of <see cref="TmdbDiscoverClient"/>, used to look up posters.</param>
-    /// <param name="posterStore">Instance of <see cref="PosterStore"/>, used to cache posters.</param>
     /// <param name="logger">Instance of the <see cref="ILogger{SnapshotListFetcher}"/> interface.</param>
     public SnapshotListFetcher(
         IHttpClientFactory httpClientFactory,
         SourceListStore store,
-        TmdbDiscoverClient discoverClient,
-        PosterStore posterStore,
         ILogger<SnapshotListFetcher> logger)
     {
         _httpClientFactory = httpClientFactory;
         _store = store;
-        _discoverClient = discoverClient;
-        _posterStore = posterStore;
         _logger = logger;
     }
 
@@ -89,6 +81,7 @@ public sealed class SnapshotListFetcher
             var client = _httpClientFactory.CreateClient();
             var body = await client.GetStringAsync(url, cancellationToken).ConfigureAwait(false);
             var items = Parse(source.Key, body);
+            ResolvePosterUrls(items);
             var kind = source.Kind.Equals("trending", StringComparison.OrdinalIgnoreCase)
                 ? SourceListKind.Trending
                 : SourceListKind.TopRated;
@@ -96,12 +89,8 @@ public sealed class SnapshotListFetcher
                 ? $"{DisplayName(source.Key)} Trending"
                 : $"{DisplayName(source.Key)} Top Rated";
 
-            // Store the list first so it is served immediately, then fill in posters as a second pass.
             _store.ReplaceList(source.Key, kind, title, items);
             _logger.LogInformation("Refreshed {Source} ({Kind}): {Count} titles", source.Key, source.Kind, items.Count);
-
-            await EnrichPostersAsync(items, cancellationToken).ConfigureAwait(false);
-            _store.ReplaceList(source.Key, kind, title, items);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -109,27 +98,21 @@ public sealed class SnapshotListFetcher
         }
     }
 
-    private async Task<IReadOnlyList<SourceListItem>> EnrichPostersAsync(IReadOnlyList<SourceListItem> items, CancellationToken cancellationToken)
+    private static IReadOnlyList<SourceListItem> ResolvePosterUrls(IReadOnlyList<SourceListItem> items)
     {
         foreach (var item in items)
         {
-            var current = item.PosterUrl;
-            if (!string.IsNullOrWhiteSpace(current) && !current.StartsWith("/Discover/Posters/", StringComparison.Ordinal))
+            if (!string.IsNullOrWhiteSpace(item.PosterUrl))
             {
-                // The source provides its own poster URL (e.g. IMDb's Amazon URL); cache it locally.
-                item.PosterUrl = await _posterStore.CacheAsync(current, cancellationToken).ConfigureAwait(false);
+                // The source provides its own poster URL (e.g. IMDb's Amazon URL); proxy it lazily.
+                item.PosterUrl = PosterStore.EncodeProxyUrl(PosterStore.UrlPrefix + item.PosterUrl);
             }
-            else if (string.IsNullOrWhiteSpace(current))
+            else
             {
-                // No poster in the source data; look one up via TMDb.
-                var remoteUrl = await _discoverClient.FindPosterUrlAsync(item.Title, item.Year, cancellationToken).ConfigureAwait(false);
-                if (remoteUrl is not null)
-                {
-                    item.PosterUrl = await _posterStore.CacheAsync(remoteUrl, cancellationToken).ConfigureAwait(false);
-                }
+                // No poster in the source data; proxy a TMDb lookup lazily.
+                item.PosterUrl = PosterStore.EncodeProxyUrl(
+                    PosterStore.SearchPrefix + item.Title + '\u001f' + (item.Year?.ToString() ?? string.Empty));
             }
-
-            await Task.Delay(100, cancellationToken).ConfigureAwait(false);
         }
 
         return items;
