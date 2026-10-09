@@ -33,6 +33,11 @@
     <PackageReference Include="Jellyfin.Data" Version="$(JellyfinVersion)" ExcludeAssets="runtime" />
     <PackageReference Include="Jellyfin.Extensions" Version="$(JellyfinVersion)" ExcludeAssets="runtime" />
 
+    <!-- The server ships its own EF Core Sqlite provider (its default database is SQLite), so this
+         is referenced at compile time only and reuses the server's loaded assemblies, matching the
+         Jellyfin.* packages above. Version must equal the server's (Jellyfin 12.1.0 = 10.0.11). -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.11" ExcludeAssets="runtime" />
+
     <!-- Not shipped by the server, so this one does need to travel with the plugin. -->
     <PackageReference Include="TMDbLib" Version="3.0.0" />
   </ItemGroup>

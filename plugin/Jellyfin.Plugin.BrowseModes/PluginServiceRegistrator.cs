@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.BrowseModes.Data;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Plugins;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,5 +16,9 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         // Singleton so the list cache is shared between the controller and the scheduled task
         // that warms it.
         serviceCollection.AddSingleton<TmdbDiscoverClient>();
+
+        // Singleton store for the snapshot source lists; the controller reads it and the scheduled
+        // task writes it, both against the same SQLite file.
+        serviceCollection.AddSingleton<SourceListStore>();
     }
 }
