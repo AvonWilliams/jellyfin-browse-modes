@@ -294,12 +294,12 @@ public sealed class SnapshotListFetcher
     {
         // The netflix_top10 dataset is tab-separated. A country key ("netflix-<iso2>") selects one
         // country from all-weeks-countries.tsv; the bare "netflix" reads all-weeks-global.tsv.
-        // Only the latest week's film rows are wanted; rank comes from weekly_rank.
+        // Only the latest week's film and TV rows are wanted; rank comes from weekly_rank.
         var iso2 = key.StartsWith("netflix-", StringComparison.Ordinal)
             ? key.Substring("netflix-".Length).ToUpperInvariant()
             : null;
 
-        var rows = new List<(int Rank, string Title, string Week)>();
+        var rows = new List<(int Rank, string Title, string Week, bool IsSeries)>();
         var lines = tsv.Split('\n');
         for (var i = 0; i < lines.Length; i++)
         {
@@ -365,7 +365,8 @@ public sealed class SnapshotListFetcher
                 title = fields[5];
             }
 
-            if (!category.StartsWith("Film", StringComparison.OrdinalIgnoreCase))
+            if (!category.StartsWith("Film", StringComparison.OrdinalIgnoreCase)
+                && !category.StartsWith("TV", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
@@ -375,14 +376,15 @@ public sealed class SnapshotListFetcher
                 continue;
             }
 
-            rows.Add((rank, title.Trim(), week));
+            var isSeries = category.StartsWith("TV", StringComparison.OrdinalIgnoreCase);
+            rows.Add((rank, title.Trim(), week, isSeries));
         }
 
         var latestWeek = rows.Count > 0 ? rows.Max(r => r.Week) : null;
         return rows
             .Where(r => r.Week == latestWeek)
             .OrderBy(r => r.Rank)
-            .Select(r => new SourceListItem { Rank = r.Rank, Title = r.Title, Year = null })
+            .Select(r => new SourceListItem { Rank = r.Rank, Title = r.Title, Year = null, IsSeries = r.IsSeries })
             .ToList();
     }
 

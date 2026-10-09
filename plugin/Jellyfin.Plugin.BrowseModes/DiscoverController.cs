@@ -148,19 +148,22 @@ public class DiscoverController : ControllerBase
         CancellationToken cancellationToken = default)
     {
         var resolvedSource = ResolveSource(source);
-        // Snapshot sources are movie lists only; shows are served by TMDb alone.
-        if (!resolvedSource.Equals(DefaultSource, StringComparison.OrdinalIgnoreCase)
-            || !IsSupportedSource(resolvedSource, SourceListKind.Trending))
+        if (!IsSupportedSource(resolvedSource, SourceListKind.Trending))
         {
             return Ok(new DiscoverRankedResult { Source = resolvedSource });
         }
 
-        var timeWindow = TimeWindow.Week;
-        var titles = await _discoverClient
-            .GetTrendingSeriesTitlesAsync(timeWindow, TmdbDiscoverClient.PagesToScan, cancellationToken)
-            .ConfigureAwait(false);
+        if (resolvedSource.Equals(DefaultSource, StringComparison.OrdinalIgnoreCase))
+        {
+            var timeWindow = TimeWindow.Week;
+            var titles = await _discoverClient
+                .GetTrendingSeriesTitlesAsync(timeWindow, TmdbDiscoverClient.PagesToScan, cancellationToken)
+                .ConfigureAwait(false);
 
-        return BuildRankedResult(resolvedSource, titles, BaseItemKind.Series, userId, parentId, ParseFields(fields), limit, TmdbDiscoverClient.TrendingMaxRank);
+            return BuildRankedResult(resolvedSource, titles, BaseItemKind.Series, userId, parentId, ParseFields(fields), limit, TmdbDiscoverClient.TrendingMaxRank);
+        }
+
+        return BuildSnapshotRankedResult(resolvedSource, SourceListKind.Trending, BaseItemKind.Series, userId, parentId, ParseFields(fields), limit);
     }
 
     /// <summary>
@@ -224,18 +227,21 @@ public class DiscoverController : ControllerBase
         CancellationToken cancellationToken = default)
     {
         var resolvedSource = ResolveSource(source);
-        // Snapshot sources are movie lists only; shows are served by TMDb alone.
-        if (!resolvedSource.Equals(DefaultSource, StringComparison.OrdinalIgnoreCase)
-            || !IsSupportedSource(resolvedSource, SourceListKind.TopRated))
+        if (!IsSupportedSource(resolvedSource, SourceListKind.TopRated))
         {
             return Ok(new DiscoverRankedResult { Source = resolvedSource });
         }
 
-        var titles = await _discoverClient
-            .GetTopRatedSeriesTitlesAsync(TmdbDiscoverClient.PagesToScan, cancellationToken)
-            .ConfigureAwait(false);
+        if (resolvedSource.Equals(DefaultSource, StringComparison.OrdinalIgnoreCase))
+        {
+            var titles = await _discoverClient
+                .GetTopRatedSeriesTitlesAsync(TmdbDiscoverClient.PagesToScan, cancellationToken)
+                .ConfigureAwait(false);
 
-        return BuildRankedResult(resolvedSource, titles, BaseItemKind.Series, userId, parentId, ParseFields(fields), limit, TmdbDiscoverClient.TopRatedMaxRank);
+            return BuildRankedResult(resolvedSource, titles, BaseItemKind.Series, userId, parentId, ParseFields(fields), limit, TmdbDiscoverClient.TopRatedMaxRank);
+        }
+
+        return BuildSnapshotRankedResult(resolvedSource, SourceListKind.TopRated, BaseItemKind.Series, userId, parentId, ParseFields(fields), limit);
     }
 
     /// <summary>
@@ -558,7 +564,9 @@ public class DiscoverController : ControllerBase
         var user = effectiveUserId.IsEmpty() ? null : _userManager.GetUserById(effectiveUserId);
         var dtoOptions = new DtoOptions { Fields = fields };
 
-        var titles = _sourceListStore.GetList(source, kind);
+        var titles = _sourceListStore.GetList(source, kind)
+            .Where(t => t.IsSeries == (itemKind == BaseItemKind.Series))
+            .ToList();
         if (titles.Count == 0)
         {
             return new DiscoverRankedResult { Source = source };

@@ -94,4 +94,9 @@ public sealed class SourceListItem
     /// Gets or sets a poster URL, when the source provides one.
     /// </summary>
     public string? PosterUrl { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether this title is a series (TV) rather than a movie.
+    /// </summary>
+    public bool IsSeries { get; set; }
 }
