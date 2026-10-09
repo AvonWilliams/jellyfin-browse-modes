@@ -46,6 +46,10 @@ up to date.
 Native installs need **root** — the script writes `/var/lib/jellyfin` and `/usr/share/jellyfin`,
 so run it with `sudo`. Docker installs use `--docker` instead and don't need root.
 
+> **Precaution:** the one-liners below pipe a remote script straight into `bash` — with `sudo`,
+> as root. Never run a script you haven't read. The safe path is to download and inspect it first
+> (the second example), then run it yourself.
+
 **curl**
 
 Run directly:
