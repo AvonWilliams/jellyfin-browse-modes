@@ -81,7 +81,7 @@ public sealed class SnapshotListFetcher
             var client = _httpClientFactory.CreateClient();
             var body = await client.GetStringAsync(url, cancellationToken).ConfigureAwait(false);
             var items = Parse(source.Key, body);
-            ResolvePosterUrls(items);
+            ResolvePosterUrls(source.Key, items);
             var kind = source.Kind.Equals("trending", StringComparison.OrdinalIgnoreCase)
                 ? SourceListKind.Trending
                 : SourceListKind.TopRated;
@@ -98,30 +98,20 @@ public sealed class SnapshotListFetcher
         }
     }
 
-    private static IReadOnlyList<SourceListItem> ResolvePosterUrls(IReadOnlyList<SourceListItem> items)
+    private static IReadOnlyList<SourceListItem> ResolvePosterUrls(string sourceKey, IReadOnlyList<SourceListItem> items)
     {
+        // Netflix titles are often generic ("UNABOMBER", "The Widower"), so hint the search with
+        // the word "netflix" to avoid mismatching an unrelated film of the same name.
+        var hint = sourceKey.StartsWith("netflix", StringComparison.Ordinal) ? " netflix" : string.Empty;
+
         foreach (var item in items)
         {
-            if (!string.IsNullOrWhiteSpace(item.PosterUrl))
-            {
-                // The source provides its own poster URL (e.g. IMDb's Amazon URL); proxy it lazily.
-                item.PosterUrl = PosterStore.EncodeProxyUrl(PosterStore.UrlPrefix + DownscalePosterUrl(item.PosterUrl));
-            }
-            else
-            {
-                // No poster in the source data; proxy a TMDb lookup lazily.
-                item.PosterUrl = PosterStore.EncodeProxyUrl(
-                    PosterStore.SearchPrefix + item.Title + '\u001f' + (item.Year?.ToString() ?? string.Empty));
-            }
+            // Look every title up on TMDb so all posters share the w342 size, regardless of source.
+            item.PosterUrl = PosterStore.EncodeProxyUrl(
+                PosterStore.SearchPrefix + item.Title + hint + '\u001f' + (item.Year?.ToString() ?? string.Empty));
         }
 
         return items;
-    }
-
-    private static string DownscalePosterUrl(string url)
-    {
-        // Amazon posters are stored full-size (1200px+); request a 342px width to keep tiles light.
-        return url.Replace("@._V1_", "@._V1_SX342_");
     }
 
     private static string? ResolveUrl(SourceListConfig source)
@@ -370,11 +360,18 @@ public sealed class SnapshotListFetcher
         }
 
         var latestWeek = rows.Count > 0 ? rows.Max(r => r.Week) : null;
-        return rows
-            .Where(r => r.Week == latestWeek)
-            .OrderBy(r => r.Rank)
-            .Select(r => new SourceListItem { Rank = r.Rank, Title = r.Title, Year = null, IsSeries = r.IsSeries })
-            .ToList();
+        var result = new List<SourceListItem>();
+        var seriesRank = 0;
+        var movieRank = 0;
+        foreach (var row in rows.Where(r => r.Week == latestWeek))
+        {
+            // Re-rank within each series/movie group so English and non-English rows do not share
+            // a rank (the dataset ranks them independently per language).
+            var rank = row.IsSeries ? ++seriesRank : ++movieRank;
+            result.Add(new SourceListItem { Rank = rank, Title = row.Title, Year = null, IsSeries = row.IsSeries });
+        }
+
+        return result;
     }
 
     private static List<string> SplitCsvLine(string line)
