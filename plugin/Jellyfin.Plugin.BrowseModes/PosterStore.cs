@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Net.Http;
 using System.Threading;
@@ -29,22 +30,27 @@ public sealed class PosterStore
 
     private readonly string _posterDirectory;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly TmdbDiscoverClient _discoverClient;
     private readonly ILogger<PosterStore> _logger;
+    private readonly ConcurrentDictionary<string, string?> _searchCache = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PosterStore"/> class.
     /// </summary>
     /// <param name="applicationPaths">Instance of the <see cref="IApplicationPaths"/> interface.</param>
     /// <param name="httpClientFactory">Instance of the <see cref="IHttpClientFactory"/> interface.</param>
+    /// <param name="discoverClient">Instance of <see cref="TmdbDiscoverClient"/>, used for poster lookups.</param>
     /// <param name="logger">Instance of the <see cref="ILogger{PosterStore}"/> interface.</param>
     public PosterStore(
         IApplicationPaths applicationPaths,
         IHttpClientFactory httpClientFactory,
+        TmdbDiscoverClient discoverClient,
         ILogger<PosterStore> logger)
     {
         _posterDirectory = Path.Combine(applicationPaths.DataPath, "browse-modes", "posters");
         Directory.CreateDirectory(_posterDirectory);
         _httpClientFactory = httpClientFactory;
+        _discoverClient = discoverClient;
         _logger = logger;
     }
 
@@ -168,6 +174,27 @@ public sealed class PosterStore
         }
 
         return filePath;
+    }
+
+    /// <summary>
+    /// Resolves a title to its poster URL via TMDb, caching the result in memory so repeated
+    /// requests (e.g. a hard refresh) do not re-run the search.
+    /// </summary>
+    /// <param name="title">The title to search for.</param>
+    /// <param name="year">The release year, when known.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>The remote poster URL, or null when no match.</returns>
+    public async Task<string?> ResolveRemoteUrlAsync(string title, int? year, CancellationToken cancellationToken)
+    {
+        var key = title + '\u001f' + (year?.ToString() ?? string.Empty);
+        if (_searchCache.TryGetValue(key, out var cached))
+        {
+            return cached;
+        }
+
+        var url = await _discoverClient.FindPosterUrlAsync(title, year, cancellationToken).ConfigureAwait(false);
+        _searchCache[key] = url;
+        return url;
     }
 
     /// <summary>

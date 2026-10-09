@@ -327,7 +327,7 @@ public class DiscoverController : ControllerBase
                 return NotFound();
             }
 
-            remoteUrl = await _discoverClient.FindPosterUrlAsync(title, year, cancellationToken).ConfigureAwait(false);
+            remoteUrl = await _posterStore.ResolveRemoteUrlAsync(title, year, cancellationToken).ConfigureAwait(false);
         }
         else
         {
