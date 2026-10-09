@@ -9,6 +9,22 @@
         "imageUrl": "",
         "versions": [
             {
+                "version": "2.2.0.0",
+                "changelog": "Multi-source ranked lists (IMDb, Letterboxd, Rotten Tomatoes, Netflix global/au/ph), server-side poster cache, Netflix series on shows, tabbed settings and source-lists admin page.",
+                "targetAbi": "12.1.0.0",
+                "sourceUrl": "https://github.com/AvonWilliams/jellyfin-browse-modes/releases/download/v2.2.0.0/browse-modes_2.2.0.0_12.1.0.zip",
+                "checksum": "1c29509fa467d01aac082cedbdcc627e",
+                "timestamp": "2026-10-09T21:04:14Z"
+            },
+            {
+                "version": "2.2.0.0",
+                "changelog": "Multi-source ranked lists (IMDb, Letterboxd, Rotten Tomatoes, Netflix global/au/ph), server-side poster cache, Netflix series on shows, tabbed settings and source-lists admin page.",
+                "targetAbi": "12.0.0.0",
+                "sourceUrl": "https://github.com/AvonWilliams/jellyfin-browse-modes/releases/download/v2.2.0.0/browse-modes_2.2.0.0_12.0.0.zip",
+                "checksum": "6c581633277255c79e87cfe6882bb363",
+                "timestamp": "2026-10-09T21:04:14Z"
+            },
+            {
                 "version": "2.1.0.0",
                 "changelog": "Browse-modes restructure: multi-source ranked lists with missing-title stubs and a configurable show-missing default.",
                 "targetAbi": "12.1.0.0",
