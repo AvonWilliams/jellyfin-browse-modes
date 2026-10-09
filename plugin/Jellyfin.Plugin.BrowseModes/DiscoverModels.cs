@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using MediaBrowser.Model.Dto;
 
@@ -90,4 +91,56 @@ public sealed class TmdbRankedTitle
     /// Gets the source-relative poster path, when the source provides one.
     /// </summary>
     public string? PosterPath { get; init; }
+}
+
+/// <summary>
+/// One stored source list, surfaced to the admin source-lists page.
+/// </summary>
+public sealed class SourceListSummaryDto
+{
+    /// <summary>
+    /// Gets or sets the normalized source key, e.g. "imdb".
+    /// </summary>
+    public string Source { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the list kind, "trending" or "toprated".
+    /// </summary>
+    public string Kind { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the display name, e.g. "IMDb Top 250".
+    /// </summary>
+    public string Title { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets when this list was last fetched and stored.
+    /// </summary>
+    public DateTime LastRefreshedUtc { get; set; }
+
+    /// <summary>
+    /// Gets or sets the ranked titles in this list.
+    /// </summary>
+    public List<SourceListTitleDto> Items { get; set; } = new();
+}
+
+/// <summary>
+/// One ranked title inside a <see cref="SourceListSummaryDto"/>.
+/// </summary>
+public sealed class SourceListTitleDto
+{
+    /// <summary>
+    /// Gets or sets the 1-based rank within the list.
+    /// </summary>
+    public int Rank { get; set; }
+
+    /// <summary>
+    /// Gets or sets the display title.
+    /// </summary>
+    public string Title { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the release year, when the source provides one.
+    /// </summary>
+    public int? Year { get; set; }
 }

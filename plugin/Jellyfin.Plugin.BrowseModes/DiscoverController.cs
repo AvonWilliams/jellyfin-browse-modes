@@ -257,6 +257,37 @@ public class DiscoverController : ControllerBase
     }
 
     /// <summary>
+    /// Gets the stored snapshot lists, in full, with their last-refresh time.
+    /// </summary>
+    /// <remarks>
+    /// Backs the admin settings page that shows each source's current list. The lists are returned
+    /// in rank order, exactly as fetched, without any library matching.
+    /// </remarks>
+    /// <response code="200">The stored source lists returned.</response>
+    /// <returns>The stored source lists.</returns>
+    [HttpGet("SourceLists")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult<List<SourceListSummaryDto>> GetSourceLists()
+    {
+        var lists = _sourceListStore.GetAllLists();
+        var result = lists
+            .Select(list => new SourceListSummaryDto
+            {
+                Source = list.Source,
+                Kind = list.Kind == SourceListKind.Trending ? "trending" : "toprated",
+                Title = list.Title,
+                LastRefreshedUtc = list.LastRefreshedUtc,
+                Items = list.Items
+                    .OrderBy(item => item.Rank)
+                    .Select(item => new SourceListTitleDto { Rank = item.Rank, Title = item.Title, Year = item.Year })
+                    .ToList()
+            })
+            .ToList();
+
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Parses the comma delimited fields query parameter.
     /// </summary>
     /// <remarks>

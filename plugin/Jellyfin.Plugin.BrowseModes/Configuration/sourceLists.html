@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Browse Modes — Source Lists</title>
+    <style>
+        .sourceList h3 {
+            margin: 1.5em 0 0.25em;
+        }
+        .sourceList .meta {
+            color: #888;
+            margin-bottom: 0.5em;
+        }
+        .sourceList ol {
+            margin: 0;
+            padding-left: 1.5em;
+        }
+        .sourceList li {
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+<div id="SourceListsConfigPage" data-role="page" class="page type-interior pluginConfigurationPage">
+    <div data-role="content">
+        <div class="content-primary">
+            <div style="margin-bottom:1.5em; line-height:1.6;">
+                <p>
+                    The snapshot ranked lists the plugin has fetched, exactly as stored. Each list
+                    shows when it was last scraped and every title in rank order. Run "Refresh
+                    snapshot source lists" from Dashboard &rarr; Scheduled Tasks to update them.
+                </p>
+            </div>
+            <div id="SourceLists"></div>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        (function () {
+            function renderList(list) {
+                var container = document.createElement('div');
+                container.className = 'sourceList';
+
+                var heading = document.createElement('h3');
+                heading.textContent = list.Title + ' (' + list.Source + ', ' + list.Kind + ')';
+                container.appendChild(heading);
+
+                var meta = document.createElement('div');
+                meta.className = 'meta';
+                meta.textContent = 'Last scraped: ' + new Date(list.LastRefreshedUtc).toLocaleString()
+                    + ' — ' + list.Items.length + ' titles';
+                container.appendChild(meta);
+
+                var ol = document.createElement('ol');
+                list.Items.forEach(function (item) {
+                    var li = document.createElement('li');
+                    li.textContent = item.Title + (item.Year ? ' (' + item.Year + ')' : '');
+                    ol.appendChild(li);
+                });
+                container.appendChild(ol);
+
+                return container;
+            }
+
+            document.querySelector('#SourceListsConfigPage')
+                .addEventListener('pageshow', function () {
+                    Dashboard.showLoadingMsg();
+                    ApiClient.getJSON(ApiClient.getUrl('Discover/SourceLists')).then(function (lists) {
+                        var container = document.querySelector('#SourceLists');
+                        container.innerHTML = '';
+                        if (!lists || lists.length === 0) {
+                            container.textContent = 'No snapshot lists have been fetched yet. Run '
+                                + '"Refresh snapshot source lists" from Dashboard → Scheduled Tasks.';
+                        } else {
+                            lists.forEach(function (list) {
+                                container.appendChild(renderList(list));
+                            });
+                        }
+                        Dashboard.hideLoadingMsg();
+                    });
+                });
+        })();
+    </script>
+</div>
+</body>
+</html>

@@ -58,5 +58,11 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
             Name = Name,
             EmbeddedResourcePath = GetType().Namespace + ".Configuration.config.html"
         };
+
+        yield return new PluginPageInfo
+        {
+            Name = "Browse Modes Source Lists",
+            EmbeddedResourcePath = GetType().Namespace + ".Configuration.sourceLists.html"
+        };
     }
 }

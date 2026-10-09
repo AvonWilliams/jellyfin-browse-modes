@@ -80,6 +80,21 @@ public sealed class SourceListStore
             .ToList();
     }
 
+    /// <summary>
+    /// Returns every stored list with its titles and last-refresh time.
+    /// </summary>
+    /// <returns>The stored lists.</returns>
+    public IReadOnlyList<SourceList> GetAllLists()
+    {
+        using var db = CreateContext();
+        return db.SourceLists
+            .Include(l => l.Items)
+            .AsNoTracking()
+            .OrderBy(l => l.Source)
+            .ThenBy(l => l.Kind)
+            .ToList();
+    }
+
     private SourceListDbContext CreateContext()
     {
         var context = new SourceListDbContext(_options);
