@@ -62,6 +62,12 @@ if [ "$WEB_ONLY" -eq 1 ] && [ "$PLUGIN_ONLY" -eq 1 ]; then
   exit 2
 fi
 
+# Native mode writes to /var/lib/jellyfin and /usr/share/jellyfin, which need root.
+if [ -z "$CONTAINER" ] && [ "$(id -u)" -ne 0 ]; then
+  echo "Native mode needs root; re-run with sudo" >&2
+  exit 1
+fi
+
 for cmd in curl unzip; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "Required command not found: $cmd" >&2; exit 1; }
 done
