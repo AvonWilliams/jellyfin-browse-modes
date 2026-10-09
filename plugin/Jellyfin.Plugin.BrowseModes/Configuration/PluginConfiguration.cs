@@ -70,19 +70,21 @@ public class PluginConfiguration : BasePluginConfiguration
     public int MaxMissing { get; set; } = 10;
 
     /// <summary>
-    /// Gets or sets the snapshot ranked-list sources the plugin serves, alongside TMDb.
+    /// Gets or sets the snapshot ranked lists the plugin serves, alongside TMDb.
     /// </summary>
     /// <remarks>
     /// TMDb is not listed here: it is always available when <see cref="TmdbApiKey"/> is set and is
-    /// fetched live. These sources are snapshot lists, fetched and refreshed at runtime by a
+    /// fetched live. Each entry is one list from one source (a source like IMDb contributes two
+    /// lists — a trending list and a top-rated list). Fetched and refreshed at runtime by a
     /// scheduled task.
     /// </remarks>
-    public List<SourceConfig> Sources { get; set; } = new List<SourceConfig>
+    public List<SourceListConfig> Sources { get; set; } = new List<SourceListConfig>
     {
-        new SourceConfig { Key = "imdb" },
-        new SourceConfig { Key = "netflix" },
-        new SourceConfig { Key = "letterboxd" },
-        new SourceConfig { Key = "rottentomatoes" }
+        new SourceListConfig { Key = "imdb", Kind = "trending" },
+        new SourceListConfig { Key = "imdb", Kind = "toprated" },
+        new SourceListConfig { Key = "netflix", Kind = "trending" },
+        new SourceListConfig { Key = "letterboxd", Kind = "toprated" },
+        new SourceListConfig { Key = "rottentomatoes", Kind = "toprated" }
     };
 
     /// <summary>
@@ -97,9 +99,9 @@ public class PluginConfiguration : BasePluginConfiguration
 }
 
 /// <summary>
-/// A snapshot ranked-list source: how to fetch it and whether scraping is an allowed fallback.
+/// One snapshot ranked list: how to fetch it and whether scraping is an allowed fallback.
 /// </summary>
-public sealed class SourceConfig
+public sealed class SourceListConfig
 {
     /// <summary>
     /// Gets or sets the normalized source key, e.g. "imdb".
@@ -107,12 +109,17 @@ public sealed class SourceConfig
     public string Key { get; set; } = string.Empty;
 
     /// <summary>
-    /// Gets or sets a value indicating whether this source is served.
+    /// Gets or sets the list kind, "trending" or "toprated".
+    /// </summary>
+    public string Kind { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether this list is served.
     /// </summary>
     public bool Enabled { get; set; } = true;
 
     /// <summary>
-    /// Gets or sets the snapshot URL. Empty means the built-in default for the key.
+    /// Gets or sets the snapshot URL. Empty means the built-in default for the key and kind.
     /// </summary>
     public string Url { get; set; } = string.Empty;
 
