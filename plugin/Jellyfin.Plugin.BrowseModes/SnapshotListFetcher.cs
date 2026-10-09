@@ -113,16 +113,23 @@ public sealed class SnapshotListFetcher
     {
         foreach (var item in items)
         {
-            if (string.IsNullOrWhiteSpace(item.PosterUrl))
+            var current = item.PosterUrl;
+            if (!string.IsNullOrWhiteSpace(current) && !current.StartsWith("/Discover/Posters/", StringComparison.Ordinal))
             {
+                // The source provides its own poster URL (e.g. IMDb's Amazon URL); cache it locally.
+                item.PosterUrl = await _posterStore.CacheAsync(current, cancellationToken).ConfigureAwait(false);
+            }
+            else if (string.IsNullOrWhiteSpace(current))
+            {
+                // No poster in the source data; look one up via TMDb.
                 var remoteUrl = await _discoverClient.FindPosterUrlAsync(item.Title, item.Year, cancellationToken).ConfigureAwait(false);
                 if (remoteUrl is not null)
                 {
                     item.PosterUrl = await _posterStore.CacheAsync(remoteUrl, cancellationToken).ConfigureAwait(false);
                 }
-
-                await Task.Delay(100, cancellationToken).ConfigureAwait(false);
             }
+
+            await Task.Delay(100, cancellationToken).ConfigureAwait(false);
         }
 
         return items;
