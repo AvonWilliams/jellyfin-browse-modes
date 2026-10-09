@@ -155,9 +155,11 @@ public sealed class PosterStore
         var filePath = Path.Combine(_posterDirectory, ComputeKey(spec) + ".jpg");
         if (File.Exists(filePath))
         {
+            _logger.LogInformation("Poster cache HIT: {Spec}", spec);
             return filePath;
         }
 
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         var remoteUrl = await ResolveRemoteUrlAsync(spec, cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrEmpty(remoteUrl))
         {
@@ -176,6 +178,7 @@ public sealed class PosterStore
             return null;
         }
 
+        _logger.LogInformation("Poster cache MISS: {Spec} in {Ms}ms", spec, stopwatch.ElapsedMilliseconds);
         return filePath;
     }
 
