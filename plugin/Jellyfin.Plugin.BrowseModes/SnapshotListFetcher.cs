@@ -105,7 +105,7 @@ public sealed class SnapshotListFetcher
             if (!string.IsNullOrWhiteSpace(item.PosterUrl))
             {
                 // The source provides its own poster URL (e.g. IMDb's Amazon URL); proxy it lazily.
-                item.PosterUrl = PosterStore.EncodeProxyUrl(PosterStore.UrlPrefix + item.PosterUrl);
+                item.PosterUrl = PosterStore.EncodeProxyUrl(PosterStore.UrlPrefix + DownscalePosterUrl(item.PosterUrl));
             }
             else
             {
@@ -116,6 +116,12 @@ public sealed class SnapshotListFetcher
         }
 
         return items;
+    }
+
+    private static string DownscalePosterUrl(string url)
+    {
+        // Amazon posters are stored full-size (1200px+); request a 342px width to keep tiles light.
+        return url.Replace("@._V1_", "@._V1_SX342_");
     }
 
     private static string? ResolveUrl(SourceListConfig source)
