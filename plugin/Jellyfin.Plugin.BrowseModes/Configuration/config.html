@@ -119,7 +119,7 @@
                     </div>
                 </div>
 
-                <div class="tabContent" data-tab="sources">
+                <div class="tabContent" data-tab="sources" style="display:none">
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused">Snapshot sources</label>
                         <div class="fieldDescription">
@@ -131,7 +131,7 @@
                     </div>
                 </div>
 
-                <div class="tabContent" data-tab="display">
+                <div class="tabContent" data-tab="display" style="display:none">
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="ShowMissing">Show missing titles</label>
                         <input id="ShowMissing" name="ShowMissing" type="checkbox" is="emby-checkbox" />
@@ -337,7 +337,7 @@
 
             function showTab(name) {
                 document.querySelectorAll('.tabContent').forEach(function (el) {
-                    el.classList.toggle('active', el.getAttribute('data-tab') === name);
+                    el.style.display = el.getAttribute('data-tab') === name ? 'block' : 'none';
                 });
                 document.querySelectorAll('.tabButton').forEach(function (btn) {
                     btn.classList.toggle('active', btn.getAttribute('data-tab') === name);

@@ -89,7 +89,6 @@ public sealed class SnapshotListFetcher
             var client = _httpClientFactory.CreateClient();
             var body = await client.GetStringAsync(url, cancellationToken).ConfigureAwait(false);
             var items = Parse(source.Key, body);
-            items = await EnrichPostersAsync(items, cancellationToken).ConfigureAwait(false);
             var kind = source.Kind.Equals("trending", StringComparison.OrdinalIgnoreCase)
                 ? SourceListKind.Trending
                 : SourceListKind.TopRated;
@@ -97,8 +96,12 @@ public sealed class SnapshotListFetcher
                 ? $"{DisplayName(source.Key)} Trending"
                 : $"{DisplayName(source.Key)} Top Rated";
 
+            // Store the list first so it is served immediately, then fill in posters as a second pass.
             _store.ReplaceList(source.Key, kind, title, items);
             _logger.LogInformation("Refreshed {Source} ({Kind}): {Count} titles", source.Key, source.Kind, items.Count);
+
+            await EnrichPostersAsync(items, cancellationToken).ConfigureAwait(false);
+            _store.ReplaceList(source.Key, kind, title, items);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -118,7 +121,7 @@ public sealed class SnapshotListFetcher
                     item.PosterUrl = await _posterStore.CacheAsync(remoteUrl, cancellationToken).ConfigureAwait(false);
                 }
 
-                await Task.Delay(250, cancellationToken).ConfigureAwait(false);
+                await Task.Delay(100, cancellationToken).ConfigureAwait(false);
             }
         }
 
