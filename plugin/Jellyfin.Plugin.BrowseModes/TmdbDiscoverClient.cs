@@ -124,6 +124,35 @@ public sealed class TmdbDiscoverClient : IDisposable
     }
 
     /// <summary>
+    /// Finds a poster URL for a title by searching TMDb, or null when there is no API key, no
+    /// match, or no poster on the match.
+    /// </summary>
+    /// <param name="title">The title to search for.</param>
+    /// <param name="year">The release year, used to disambiguate, when known.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>The absolute poster URL, or null.</returns>
+    public async Task<string?> FindPosterUrlAsync(string title, int? year, CancellationToken cancellationToken)
+    {
+        if (!HasApiKey || string.IsNullOrWhiteSpace(title))
+        {
+            return null;
+        }
+
+        var results = await TmDbClient.SearchMovieAsync(
+                title,
+                0,
+                false,
+                year ?? 0,
+                string.Empty,
+                0,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        var match = results?.Results?.FirstOrDefault(r => !string.IsNullOrWhiteSpace(r.PosterPath));
+        return match is null ? null : BuildPosterUrl(match.PosterPath);
+    }
+
+    /// <summary>
     /// Gets the currently trending movies, in TMDb's trending order.
     /// </summary>
     /// <param name="timeWindow">The window over which popularity is measured.</param>

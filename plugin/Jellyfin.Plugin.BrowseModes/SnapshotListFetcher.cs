@@ -33,6 +33,8 @@ public sealed class SnapshotListFetcher
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly SourceListStore _store;
+    private readonly TmdbDiscoverClient _discoverClient;
+    private readonly PosterStore _posterStore;
     private readonly ILogger<SnapshotListFetcher> _logger;
 
     /// <summary>
@@ -40,14 +42,20 @@ public sealed class SnapshotListFetcher
     /// </summary>
     /// <param name="httpClientFactory">Instance of the <see cref="IHttpClientFactory"/> interface.</param>
     /// <param name="store">Instance of <see cref="SourceListStore"/>.</param>
+    /// <param name="discoverClient">Instance of <see cref="TmdbDiscoverClient"/>, used to look up posters.</param>
+    /// <param name="posterStore">Instance of <see cref="PosterStore"/>, used to cache posters.</param>
     /// <param name="logger">Instance of the <see cref="ILogger{SnapshotListFetcher}"/> interface.</param>
     public SnapshotListFetcher(
         IHttpClientFactory httpClientFactory,
         SourceListStore store,
+        TmdbDiscoverClient discoverClient,
+        PosterStore posterStore,
         ILogger<SnapshotListFetcher> logger)
     {
         _httpClientFactory = httpClientFactory;
         _store = store;
+        _discoverClient = discoverClient;
+        _posterStore = posterStore;
         _logger = logger;
     }
 
@@ -79,6 +87,7 @@ public sealed class SnapshotListFetcher
             var client = _httpClientFactory.CreateClient();
             var body = await client.GetStringAsync(url, cancellationToken).ConfigureAwait(false);
             var items = Parse(source.Key, body);
+            items = await EnrichPostersAsync(items, cancellationToken).ConfigureAwait(false);
             var kind = source.Kind.Equals("trending", StringComparison.OrdinalIgnoreCase)
                 ? SourceListKind.Trending
                 : SourceListKind.TopRated;
@@ -93,6 +102,25 @@ public sealed class SnapshotListFetcher
         {
             _logger.LogWarning(ex, "Unable to refresh snapshot list {Source} ({Kind})", source.Key, source.Kind);
         }
+    }
+
+    private async Task<IReadOnlyList<SourceListItem>> EnrichPostersAsync(IReadOnlyList<SourceListItem> items, CancellationToken cancellationToken)
+    {
+        foreach (var item in items)
+        {
+            if (string.IsNullOrWhiteSpace(item.PosterUrl))
+            {
+                var remoteUrl = await _discoverClient.FindPosterUrlAsync(item.Title, item.Year, cancellationToken).ConfigureAwait(false);
+                if (remoteUrl is not null)
+                {
+                    item.PosterUrl = await _posterStore.CacheAsync(remoteUrl, cancellationToken).ConfigureAwait(false);
+                }
+
+                await Task.Delay(250, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        return items;
     }
 
     private static string? ResolveUrl(SourceListConfig source)
@@ -220,6 +248,7 @@ public sealed class SnapshotListFetcher
         var ranked = entries
             .Where(e => seen.Add(e.Title))
             .OrderByDescending(e => e.Score)
+            .Take(250)
             .Select((e, index) => new SourceListItem
             {
                 Rank = index + 1,

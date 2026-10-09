@@ -23,5 +23,8 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
 
         // Singleton fetcher that downloads and parses the snapshot lists.
         serviceCollection.AddSingleton<SnapshotListFetcher>();
+
+        // Singleton poster cache; the fetcher writes to it and the controller serves from it.
+        serviceCollection.AddSingleton<PosterStore>();
     }
 }

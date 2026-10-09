@@ -59,6 +59,7 @@ public class DiscoverController : ControllerBase
     private readonly IDtoService _dtoService;
     private readonly TmdbDiscoverClient _discoverClient;
     private readonly SourceListStore _sourceListStore;
+    private readonly PosterStore _posterStore;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DiscoverController"/> class.
@@ -68,18 +69,21 @@ public class DiscoverController : ControllerBase
     /// <param name="dtoService">Instance of the <see cref="IDtoService"/> interface.</param>
     /// <param name="discoverClient">Instance of <see cref="TmdbDiscoverClient"/>.</param>
     /// <param name="sourceListStore">Instance of <see cref="SourceListStore"/>.</param>
+    /// <param name="posterStore">Instance of <see cref="PosterStore"/>.</param>
     public DiscoverController(
         IUserManager userManager,
         ILibraryManager libraryManager,
         IDtoService dtoService,
         TmdbDiscoverClient discoverClient,
-        SourceListStore sourceListStore)
+        SourceListStore sourceListStore,
+        PosterStore posterStore)
     {
         _userManager = userManager;
         _libraryManager = libraryManager;
         _dtoService = dtoService;
         _discoverClient = discoverClient;
         _sourceListStore = sourceListStore;
+        _posterStore = posterStore;
     }
 
     /// <summary>
@@ -279,6 +283,29 @@ public class DiscoverController : ControllerBase
             .ToList();
 
         return Ok(result);
+    }
+
+    /// <summary>
+    /// Serves a cached poster image.
+    /// </summary>
+    /// <param name="key">The poster key from the stored URL.</param>
+    /// <response code="200">The poster image returned.</response>
+    /// <response code="404">The poster is not cached.</response>
+    /// <returns>The poster image.</returns>
+    [HttpGet("Posters/{key}")]
+    [AllowAnonymous]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public IActionResult GetPoster([FromRoute] string key)
+    {
+        var path = _posterStore.GetFilePath(key);
+        if (path is null)
+        {
+            return NotFound();
+        }
+
+        _posterStore.Touch(key);
+        return PhysicalFile(path, "image/jpeg");
     }
 
     /// <summary>
