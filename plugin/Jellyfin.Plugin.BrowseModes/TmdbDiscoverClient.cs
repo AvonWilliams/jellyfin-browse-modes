@@ -138,6 +138,18 @@ public sealed class TmdbDiscoverClient : IDisposable
             return null;
         }
 
+        var match = await SearchForPosterAsync(title, year, cancellationToken).ConfigureAwait(false);
+        if (match is null && title.EndsWith(" netflix", StringComparison.OrdinalIgnoreCase))
+        {
+            // The "netflix" hint can be too restrictive for TMDb's literal search; retry bare.
+            match = await SearchForPosterAsync(title.Substring(0, title.Length - " netflix".Length), year, cancellationToken).ConfigureAwait(false);
+        }
+
+        return match;
+    }
+
+    private async Task<string?> SearchForPosterAsync(string title, int? year, CancellationToken cancellationToken)
+    {
         var results = await TmDbClient.SearchMovieAsync(
                 title,
                 0,
