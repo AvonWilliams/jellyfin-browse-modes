@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Data.Enums;
 using Jellyfin.Extensions;
+using Jellyfin.Plugin.BrowseModes.Data;
 using MediaBrowser.Controller.Dto;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
@@ -57,6 +58,7 @@ public class DiscoverController : ControllerBase
     private readonly ILibraryManager _libraryManager;
     private readonly IDtoService _dtoService;
     private readonly TmdbDiscoverClient _discoverClient;
+    private readonly SourceListStore _sourceListStore;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DiscoverController"/> class.
@@ -65,16 +67,19 @@ public class DiscoverController : ControllerBase
     /// <param name="libraryManager">Instance of the <see cref="ILibraryManager"/> interface.</param>
     /// <param name="dtoService">Instance of the <see cref="IDtoService"/> interface.</param>
     /// <param name="discoverClient">Instance of <see cref="TmdbDiscoverClient"/>.</param>
+    /// <param name="sourceListStore">Instance of <see cref="SourceListStore"/>.</param>
     public DiscoverController(
         IUserManager userManager,
         ILibraryManager libraryManager,
         IDtoService dtoService,
-        TmdbDiscoverClient discoverClient)
+        TmdbDiscoverClient discoverClient,
+        SourceListStore sourceListStore)
     {
         _userManager = userManager;
         _libraryManager = libraryManager;
         _dtoService = dtoService;
         _discoverClient = discoverClient;
+        _sourceListStore = sourceListStore;
     }
 
     /// <summary>
@@ -99,17 +104,22 @@ public class DiscoverController : ControllerBase
         CancellationToken cancellationToken = default)
     {
         var resolvedSource = ResolveSource(source);
-        if (!IsSupportedSource(resolvedSource))
+        if (!IsSupportedSource(resolvedSource, SourceListKind.Trending))
         {
             return Ok(new DiscoverRankedResult { Source = resolvedSource });
         }
 
-        var timeWindow = TimeWindow.Week;
-        var titles = await _discoverClient
-            .GetTrendingMovieTitlesAsync(timeWindow, TmdbDiscoverClient.PagesToScan, cancellationToken)
-            .ConfigureAwait(false);
+        if (resolvedSource.Equals(DefaultSource, StringComparison.OrdinalIgnoreCase))
+        {
+            var timeWindow = TimeWindow.Week;
+            var titles = await _discoverClient
+                .GetTrendingMovieTitlesAsync(timeWindow, TmdbDiscoverClient.PagesToScan, cancellationToken)
+                .ConfigureAwait(false);
 
-        return BuildRankedResult(resolvedSource, titles, BaseItemKind.Movie, userId, parentId, ParseFields(fields), limit, TmdbDiscoverClient.TrendingMaxRank);
+            return BuildRankedResult(resolvedSource, titles, BaseItemKind.Movie, userId, parentId, ParseFields(fields), limit, TmdbDiscoverClient.TrendingMaxRank);
+        }
+
+        return BuildSnapshotRankedResult(resolvedSource, SourceListKind.Trending, BaseItemKind.Movie, userId, parentId, ParseFields(fields), limit);
     }
 
     /// <summary>
@@ -134,17 +144,22 @@ public class DiscoverController : ControllerBase
         CancellationToken cancellationToken = default)
     {
         var resolvedSource = ResolveSource(source);
-        if (!IsSupportedSource(resolvedSource))
+        if (!IsSupportedSource(resolvedSource, SourceListKind.Trending))
         {
             return Ok(new DiscoverRankedResult { Source = resolvedSource });
         }
 
-        var timeWindow = TimeWindow.Week;
-        var titles = await _discoverClient
-            .GetTrendingSeriesTitlesAsync(timeWindow, TmdbDiscoverClient.PagesToScan, cancellationToken)
-            .ConfigureAwait(false);
+        if (resolvedSource.Equals(DefaultSource, StringComparison.OrdinalIgnoreCase))
+        {
+            var timeWindow = TimeWindow.Week;
+            var titles = await _discoverClient
+                .GetTrendingSeriesTitlesAsync(timeWindow, TmdbDiscoverClient.PagesToScan, cancellationToken)
+                .ConfigureAwait(false);
 
-        return BuildRankedResult(resolvedSource, titles, BaseItemKind.Series, userId, parentId, ParseFields(fields), limit, TmdbDiscoverClient.TrendingMaxRank);
+            return BuildRankedResult(resolvedSource, titles, BaseItemKind.Series, userId, parentId, ParseFields(fields), limit, TmdbDiscoverClient.TrendingMaxRank);
+        }
+
+        return BuildSnapshotRankedResult(resolvedSource, SourceListKind.Trending, BaseItemKind.Series, userId, parentId, ParseFields(fields), limit);
     }
 
     /// <summary>
@@ -169,16 +184,21 @@ public class DiscoverController : ControllerBase
         CancellationToken cancellationToken = default)
     {
         var resolvedSource = ResolveSource(source);
-        if (!IsSupportedSource(resolvedSource))
+        if (!IsSupportedSource(resolvedSource, SourceListKind.TopRated))
         {
             return Ok(new DiscoverRankedResult { Source = resolvedSource });
         }
 
-        var titles = await _discoverClient
-            .GetTopRatedMovieTitlesAsync(TmdbDiscoverClient.PagesToScan, cancellationToken)
-            .ConfigureAwait(false);
+        if (resolvedSource.Equals(DefaultSource, StringComparison.OrdinalIgnoreCase))
+        {
+            var titles = await _discoverClient
+                .GetTopRatedMovieTitlesAsync(TmdbDiscoverClient.PagesToScan, cancellationToken)
+                .ConfigureAwait(false);
 
-        return BuildRankedResult(resolvedSource, titles, BaseItemKind.Movie, userId, parentId, ParseFields(fields), limit, TmdbDiscoverClient.TopRatedMaxRank);
+            return BuildRankedResult(resolvedSource, titles, BaseItemKind.Movie, userId, parentId, ParseFields(fields), limit, TmdbDiscoverClient.TopRatedMaxRank);
+        }
+
+        return BuildSnapshotRankedResult(resolvedSource, SourceListKind.TopRated, BaseItemKind.Movie, userId, parentId, ParseFields(fields), limit);
     }
 
     /// <summary>
@@ -203,16 +223,21 @@ public class DiscoverController : ControllerBase
         CancellationToken cancellationToken = default)
     {
         var resolvedSource = ResolveSource(source);
-        if (!IsSupportedSource(resolvedSource))
+        if (!IsSupportedSource(resolvedSource, SourceListKind.TopRated))
         {
             return Ok(new DiscoverRankedResult { Source = resolvedSource });
         }
 
-        var titles = await _discoverClient
-            .GetTopRatedSeriesTitlesAsync(TmdbDiscoverClient.PagesToScan, cancellationToken)
-            .ConfigureAwait(false);
+        if (resolvedSource.Equals(DefaultSource, StringComparison.OrdinalIgnoreCase))
+        {
+            var titles = await _discoverClient
+                .GetTopRatedSeriesTitlesAsync(TmdbDiscoverClient.PagesToScan, cancellationToken)
+                .ConfigureAwait(false);
 
-        return BuildRankedResult(resolvedSource, titles, BaseItemKind.Series, userId, parentId, ParseFields(fields), limit, TmdbDiscoverClient.TopRatedMaxRank);
+            return BuildRankedResult(resolvedSource, titles, BaseItemKind.Series, userId, parentId, ParseFields(fields), limit, TmdbDiscoverClient.TopRatedMaxRank);
+        }
+
+        return BuildSnapshotRankedResult(resolvedSource, SourceListKind.TopRated, BaseItemKind.Series, userId, parentId, ParseFields(fields), limit);
     }
 
     /// <summary>
@@ -294,18 +319,21 @@ public class DiscoverController : ControllerBase
     }
 
     /// <summary>
-    /// Returns whether a source is served. TMDb is available when a key is configured; every other
-    /// source is available when it is enabled in configuration.
+    /// Returns whether a source serves the given list kind. TMDb is available when a key is
+    /// configured; every other source is available when its matching list is enabled.
     /// </summary>
-    private static bool IsSupportedSource(string source)
+    private static bool IsSupportedSource(string source, SourceListKind kind)
     {
         if (source.Equals(DefaultSource, StringComparison.OrdinalIgnoreCase))
         {
             return TmdbDiscoverClient.HasApiKey;
         }
 
+        var kindKey = kind == SourceListKind.Trending ? "trending" : "toprated";
         return Plugin.Instance?.Configuration.Sources
-            .Any(s => s.Enabled && s.Key.Equals(source, StringComparison.OrdinalIgnoreCase)) == true;
+            .Any(s => s.Enabled
+                && s.Key.Equals(source, StringComparison.OrdinalIgnoreCase)
+                && s.Kind.Equals(kindKey, StringComparison.OrdinalIgnoreCase)) == true;
     }
 
     private static bool ShowMissing => Plugin.Instance?.Configuration.ShowMissing ?? true;
@@ -458,6 +486,169 @@ public class DiscoverController : ControllerBase
         }
 
         return missing;
+    }
+
+    /// <summary>
+    /// Builds a ranked result for a snapshot source, matching the stored titles against the library
+    /// by normalized name and year.
+    /// </summary>
+    private DiscoverRankedResult BuildSnapshotRankedResult(
+        string source,
+        SourceListKind kind,
+        BaseItemKind itemKind,
+        Guid? userId,
+        Guid? parentId,
+        ItemFields[] fields,
+        int limit)
+    {
+        var effectiveUserId = ResolveUserId(userId);
+        var user = effectiveUserId.IsEmpty() ? null : _userManager.GetUserById(effectiveUserId);
+        var dtoOptions = new DtoOptions { Fields = fields };
+
+        var titles = _sourceListStore.GetList(source, kind);
+        if (titles.Count == 0)
+        {
+            return new DiscoverRankedResult { Source = source };
+        }
+
+        var query = new InternalItemsQuery(user)
+        {
+            IncludeItemTypes = [itemKind],
+            Recursive = true
+        };
+
+        if (parentId.HasValue && !parentId.Value.IsEmpty())
+        {
+            query.ParentId = parentId.Value;
+        }
+
+        var items = _libraryManager.GetItemList(query);
+
+        // Group library items by normalized name so each stored title can be looked up once.
+        var byName = new Dictionary<string, List<BaseItem>>(StringComparer.Ordinal);
+        foreach (var item in items)
+        {
+            var key = NormalizeTitle(item.Name);
+            if (!byName.TryGetValue(key, out var list))
+            {
+                byName[key] = list = new List<BaseItem>();
+            }
+
+            list.Add(item);
+        }
+
+        var used = new HashSet<Guid>();
+        var ownedRanks = new HashSet<int>();
+        var matched = new List<(BaseItem Item, int Rank)>();
+
+        foreach (var title in titles)
+        {
+            if (!byName.TryGetValue(NormalizeTitle(title.Title), out var candidates))
+            {
+                continue;
+            }
+
+            BaseItem? best = null;
+            if (title.Year is not null)
+            {
+                best = candidates.FirstOrDefault(c => !used.Contains(c.Id) && c.ProductionYear == title.Year)
+                    ?? candidates.FirstOrDefault(c => !used.Contains(c.Id)
+                        && c.ProductionYear is not null
+                        && Math.Abs(c.ProductionYear.Value - title.Year.Value) <= 1);
+            }
+
+            best ??= candidates.FirstOrDefault(c => !used.Contains(c.Id));
+
+            if (best is null)
+            {
+                continue;
+            }
+
+            used.Add(best.Id);
+            ownedRanks.Add(title.Rank);
+            matched.Add((best, title.Rank));
+        }
+
+        var ranked = matched
+            .OrderBy(entry => entry.Rank)
+            .Take(limit)
+            .ToArray();
+
+        var dtos = _dtoService.GetBaseItemDtos(Array.ConvertAll(ranked, entry => entry.Item), dtoOptions, user);
+
+        for (var i = 0; i < dtos.Count && i < ranked.Length; i++)
+        {
+            dtos[i].IndexNumber = ranked[i].Rank;
+        }
+
+        return new DiscoverRankedResult
+        {
+            Source = source,
+            Items = dtos.ToList(),
+            Missing = BuildSnapshotMissingTitles(source, titles, ownedRanks)
+        };
+    }
+
+    /// <summary>
+    /// Builds the missing-title stubs for a snapshot source: stored titles that did not match a
+    /// library item, under the global cap.
+    /// </summary>
+    private static List<MissingTitleDto> BuildSnapshotMissingTitles(
+        string source,
+        IReadOnlyList<SourceListItem> titles,
+        HashSet<int> ownedRanks)
+    {
+        if (!ShowMissing || MaxMissing <= 0)
+        {
+            return new List<MissingTitleDto>();
+        }
+
+        var missing = new List<MissingTitleDto>(MaxMissing);
+        foreach (var title in titles)
+        {
+            if (missing.Count >= MaxMissing)
+            {
+                break;
+            }
+
+            if (ownedRanks.Contains(title.Rank))
+            {
+                continue;
+            }
+
+            missing.Add(new MissingTitleDto
+            {
+                Source = source,
+                Rank = title.Rank,
+                Title = title.Title,
+                Year = title.Year,
+                PosterUrl = title.PosterUrl ?? string.Empty
+            });
+        }
+
+        return missing;
+    }
+
+    /// <summary>
+    /// Normalizes a title for name matching: lowercase, alphanumeric only.
+    /// </summary>
+    private static string NormalizeTitle(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return string.Empty;
+        }
+
+        var builder = new System.Text.StringBuilder();
+        foreach (var c in name.ToLowerInvariant())
+        {
+            if (char.IsLetterOrDigit(c))
+            {
+                builder.Append(c);
+            }
+        }
+
+        return builder.ToString();
     }
 
     /// <summary>
