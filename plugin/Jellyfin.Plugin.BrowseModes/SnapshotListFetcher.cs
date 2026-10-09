@@ -27,8 +27,10 @@ public sealed class SnapshotListFetcher
             [("imdb", "trending")] = "https://raw.githubusercontent.com/crazyuploader/IMDb-Top-50/main/data/popular/movies.json",
             [("imdb", "toprated")] = "https://raw.githubusercontent.com/crazyuploader/IMDb-Top-50/main/data/top250/movies.json",
             [("letterboxd", "toprated")] = "https://raw.githubusercontent.com/L-Dot/Letterboxd-list-scraper/master/example_output/json/lb_top250.json",
-            [("rottentomatoes", "toprated")] = "https://raw.githubusercontent.com/minakdr/Rotten-Tomatoes-Certified-Fresh-Movies-Dataset-September-2024-Edition-/main/MoviesRatingRottenTomato.csv"
-            // Netflix has no reliable machine-readable collation, so it carries no default URL.
+            [("rottentomatoes", "toprated")] = "https://raw.githubusercontent.com/minakdr/Rotten-Tomatoes-Certified-Fresh-Movies-Dataset-September-2024-Edition-/main/MoviesRatingRottenTomato.csv",
+            [("netflix", "trending")] = "https://raw.githubusercontent.com/dbready/netflix_top10/main/all-weeks-global.tsv",
+            [("netflix-au", "trending")] = "https://raw.githubusercontent.com/dbready/netflix_top10/main/all-weeks-countries.tsv",
+            [("netflix-ph", "trending")] = "https://raw.githubusercontent.com/dbready/netflix_top10/main/all-weeks-countries.tsv"
         };
 
     private readonly IHttpClientFactory _httpClientFactory;
@@ -136,20 +138,38 @@ public sealed class SnapshotListFetcher
     private static string DisplayName(string key) => key switch
     {
         "imdb" => "IMDb",
-        "netflix" => "Netflix",
+        "netflix" => "Netflix Global",
+        "netflix-au" => "Netflix Australia",
+        "netflix-ph" => "Netflix Philippines",
         "letterboxd" => "Letterboxd",
         "rottentomatoes" => "Rotten Tomatoes",
         _ => key
     };
 
-    private static IReadOnlyList<SourceListItem> Parse(string key, string body) => key switch
+    private static IReadOnlyList<SourceListItem> Parse(string key, string body)
     {
-        "imdb" => ParseImdb(body),
-        "letterboxd" => ParseLetterboxd(body),
-        "rottentomatoes" => ParseRottenTomatoes(body),
-        "netflix" => ParseNetflix(body),
-        _ => Array.Empty<SourceListItem>()
-    };
+        if (key.Equals("imdb", StringComparison.Ordinal))
+        {
+            return ParseImdb(body);
+        }
+
+        if (key.Equals("letterboxd", StringComparison.Ordinal))
+        {
+            return ParseLetterboxd(body);
+        }
+
+        if (key.Equals("rottentomatoes", StringComparison.Ordinal))
+        {
+            return ParseRottenTomatoes(body);
+        }
+
+        if (key.StartsWith("netflix", StringComparison.Ordinal))
+        {
+            return ParseNetflix(key, body);
+        }
+
+        return Array.Empty<SourceListItem>();
+    }
 
     private static IReadOnlyList<SourceListItem> ParseImdb(string json)
     {
@@ -260,45 +280,100 @@ public sealed class SnapshotListFetcher
         return ranked;
     }
 
-    private static IReadOnlyList<SourceListItem> ParseNetflix(string csv)
+    private static IReadOnlyList<SourceListItem> ParseNetflix(string key, string tsv)
     {
-        // Netflix Top 10 weekly export: week,category,weekly_rank,show_title,season_title,...
-        // Only the current week's global film rows are wanted; rank comes from weekly_rank.
-        var items = new List<SourceListItem>();
-        var lines = csv.Split('\n');
+        // The netflix_top10 dataset is tab-separated. A country key ("netflix-<iso2>") selects one
+        // country from all-weeks-countries.tsv; the bare "netflix" reads all-weeks-global.tsv.
+        // Only the latest week's film rows are wanted; rank comes from weekly_rank.
+        var iso2 = key.StartsWith("netflix-", StringComparison.Ordinal)
+            ? key.Substring("netflix-".Length).ToUpperInvariant()
+            : null;
+
+        var rows = new List<(int Rank, string Title, string Week)>();
+        var lines = tsv.Split('\n');
         for (var i = 0; i < lines.Length; i++)
         {
-            var fields = SplitCsvLine(lines[i]);
-            if (fields.Count < 4)
+            var line = lines[i].Trim();
+            if (line.Length == 0)
             {
                 continue;
             }
 
-            if (i == 0 && fields[0].Equals("week", StringComparison.OrdinalIgnoreCase))
+            var fields = line.Split('\t');
+
+            string week;
+            string category;
+            string title;
+            int rank;
+            if (iso2 is null)
+            {
+                // week, category, weekly_rank, show_title, ...
+                if (fields.Length < 4)
+                {
+                    continue;
+                }
+
+                if (i == 0 && fields[0].Equals("week", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                week = fields[0];
+                category = fields[1];
+                if (!int.TryParse(fields[2], out rank))
+                {
+                    continue;
+                }
+
+                title = fields[3];
+            }
+            else
+            {
+                // country_name, country_iso2, week, category, weekly_rank, show_title, ...
+                if (fields.Length < 6)
+                {
+                    continue;
+                }
+
+                if (i == 0 && fields[0].Equals("country_name", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (!fields[1].Equals(iso2, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                week = fields[2];
+                category = fields[3];
+                if (!int.TryParse(fields[4], out rank))
+                {
+                    continue;
+                }
+
+                title = fields[5];
+            }
+
+            if (!category.StartsWith("Film", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
 
-            if (!int.TryParse(fields[2].Trim(), out var rank))
-            {
-                continue;
-            }
-
-            var title = fields[3].Trim();
             if (string.IsNullOrWhiteSpace(title))
             {
                 continue;
             }
 
-            items.Add(new SourceListItem
-            {
-                Rank = rank,
-                Title = title,
-                Year = null
-            });
+            rows.Add((rank, title.Trim(), week));
         }
 
-        return items.OrderBy(i => i.Rank).ToList();
+        var latestWeek = rows.Count > 0 ? rows.Max(r => r.Week) : null;
+        return rows
+            .Where(r => r.Week == latestWeek)
+            .OrderBy(r => r.Rank)
+            .Select(r => new SourceListItem { Rank = r.Rank, Title = r.Title, Year = null })
+            .ToList();
     }
 
     private static List<string> SplitCsvLine(string line)
