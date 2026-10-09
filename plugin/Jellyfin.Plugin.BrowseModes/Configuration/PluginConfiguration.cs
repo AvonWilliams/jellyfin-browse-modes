@@ -70,13 +70,20 @@ public class PluginConfiguration : BasePluginConfiguration
     public int MaxMissing { get; set; } = 10;
 
     /// <summary>
-    /// Gets or sets the ranked data sources the plugin serves, in the order clients should offer them.
+    /// Gets or sets the snapshot ranked-list sources the plugin serves, alongside TMDb.
     /// </summary>
     /// <remarks>
-    /// Only "tmdb" is implemented in this phase; other names are accepted and returned to the
-    /// client but resolve to an empty result until their fetch is added.
+    /// TMDb is not listed here: it is always available when <see cref="TmdbApiKey"/> is set and is
+    /// fetched live. These sources are snapshot lists, fetched and refreshed at runtime by a
+    /// scheduled task.
     /// </remarks>
-    public List<string> EnabledSources { get; set; } = new List<string> { "tmdb" };
+    public List<SourceConfig> Sources { get; set; } = new List<SourceConfig>
+    {
+        new SourceConfig { Key = "imdb" },
+        new SourceConfig { Key = "netflix" },
+        new SourceConfig { Key = "letterboxd" },
+        new SourceConfig { Key = "rottentomatoes" }
+    };
 
     /// <summary>
     /// Gets or sets the browse-mode tile keys in display order. Keys not listed are hidden.
@@ -87,4 +94,31 @@ public class PluginConfiguration : BasePluginConfiguration
     /// interpret it; the web client reads it from <c>/Discover/TileLayout</c>.
     /// </remarks>
     public List<string> BrowseModeOrder { get; set; } = new List<string>();
+}
+
+/// <summary>
+/// A snapshot ranked-list source: how to fetch it and whether scraping is an allowed fallback.
+/// </summary>
+public sealed class SourceConfig
+{
+    /// <summary>
+    /// Gets or sets the normalized source key, e.g. "imdb".
+    /// </summary>
+    public string Key { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether this source is served.
+    /// </summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets the snapshot URL. Empty means the built-in default for the key.
+    /// </summary>
+    public string Url { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether scraping the source's site is an allowed fallback
+    /// when the snapshot URL fails. Off by default; scraping is the last resort.
+    /// </summary>
+    public bool AllowScrape { get; set; }
 }

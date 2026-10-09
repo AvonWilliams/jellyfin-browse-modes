@@ -294,16 +294,18 @@ public class DiscoverController : ControllerBase
     }
 
     /// <summary>
-    /// Returns whether a source is both enabled in configuration and implemented. Phase 2
-    /// implements only TMDb; every other name is accepted but returns an empty result so a
-    /// client can render its empty state. Adding a source later means enabling it here and
-    /// wiring its fetch in the ranked endpoints.
+    /// Returns whether a source is served. TMDb is available when a key is configured; every other
+    /// source is available when it is enabled in configuration.
     /// </summary>
     private static bool IsSupportedSource(string source)
     {
-        var enabled = Plugin.Instance?.Configuration.EnabledSources ?? new List<string> { DefaultSource };
-        return source.Equals(DefaultSource, StringComparison.OrdinalIgnoreCase)
-            && enabled.Any(s => s.Equals(DefaultSource, StringComparison.OrdinalIgnoreCase));
+        if (source.Equals(DefaultSource, StringComparison.OrdinalIgnoreCase))
+        {
+            return TmdbDiscoverClient.HasApiKey;
+        }
+
+        return Plugin.Instance?.Configuration.Sources
+            .Any(s => s.Enabled && s.Key.Equals(source, StringComparison.OrdinalIgnoreCase)) == true;
     }
 
     private static bool ShowMissing => Plugin.Instance?.Configuration.ShowMissing ?? true;

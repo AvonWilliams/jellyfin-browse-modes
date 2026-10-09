@@ -107,6 +107,16 @@
                 </div>
 
                 <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused">Snapshot sources</label>
+                    <div class="fieldDescription">
+                        Ranked lists from IMDb, Netflix, Letterboxd and Rotten Tomatoes, refreshed
+                        daily. Leave a URL empty to use the built-in default. Scraping is a
+                        last-resort fallback and is off by default.
+                    </div>
+                    <div id="SourceEditor"></div>
+                </div>
+
+                <div class="inputContainer">
                     <label class="inputLabel inputLabelUnfocused">Browse mode tiles</label>
                     <div class="fieldDescription">
                         Reorder the tiles with the arrows and uncheck any you want hidden. The web
@@ -147,8 +157,19 @@
                 { key: 'studios', label: 'Studios / Networks' }
             ];
 
+            // The snapshot ranked-list sources the plugin serves alongside TMDb.
+            var SOURCES = [
+                { key: 'imdb', label: 'IMDb' },
+                { key: 'netflix', label: 'Netflix' },
+                { key: 'letterboxd', label: 'Letterboxd' },
+                { key: 'rottentomatoes', label: 'Rotten Tomatoes' }
+            ];
+
             // The editor's working state: every mode, in display order, with an enabled flag.
             var modes = [];
+
+            // The source editor's working state.
+            var sources = [];
 
             function renderTileEditor() {
                 var container = document.querySelector('#TileEditor');
@@ -198,6 +219,62 @@
                 renderTileEditor();
             }
 
+            function renderSourceEditor() {
+                var container = document.querySelector('#SourceEditor');
+                container.innerHTML = '';
+
+                sources.forEach(function (entry) {
+                    var row = document.createElement('div');
+                    row.className = 'tileEditorRow';
+
+                    var enabled = document.createElement('input');
+                    enabled.type = 'checkbox';
+                    enabled.checked = entry.Enabled;
+                    enabled.title = 'Enabled';
+                    enabled.addEventListener('change', function () { entry.Enabled = enabled.checked; });
+
+                    var label = document.createElement('span');
+                    label.textContent = entry.label;
+
+                    var url = document.createElement('input');
+                    url.type = 'text';
+                    url.placeholder = 'snapshot URL (empty = built-in default)';
+                    url.value = entry.Url || '';
+                    url.style.flex = '1';
+                    url.addEventListener('change', function () { entry.Url = url.value.trim(); });
+
+                    var scrape = document.createElement('input');
+                    scrape.type = 'checkbox';
+                    scrape.checked = entry.AllowScrape;
+                    scrape.title = 'Allow scraping as a fallback';
+                    scrape.addEventListener('change', function () { entry.AllowScrape = scrape.checked; });
+
+                    var scrapeLabel = document.createElement('span');
+                    scrapeLabel.textContent = 'scrape';
+
+                    row.appendChild(enabled);
+                    row.appendChild(label);
+                    row.appendChild(url);
+                    row.appendChild(scrape);
+                    row.appendChild(scrapeLabel);
+                    container.appendChild(row);
+                });
+            }
+
+            function initSources(list) {
+                sources = SOURCES.map(function (def) {
+                    var existing = (list || []).filter(function (s) { return s.Key === def.key; })[0];
+                    return {
+                        key: def.key,
+                        label: def.label,
+                        Enabled: existing ? existing.Enabled !== false : true,
+                        Url: existing ? (existing.Url || '') : '',
+                        AllowScrape: existing ? existing.AllowScrape === true : false
+                    };
+                });
+                renderSourceEditor();
+            }
+
             function initModes(order) {
                 var enabledKeys = (order && order.length) ? order : ALL_MODES.map(function (m) { return m.key; });
                 var enabledSet = {};
@@ -233,6 +310,7 @@
                         document.querySelector('#MaxMissing').value = (config.MaxMissing === undefined ? 10 : config.MaxMissing);
                         initModes(config.BrowseModeOrder);
                         renderTileEditor();
+                        initSources(config.Sources);
                         Dashboard.hideLoadingMsg();
                     });
                 });
@@ -250,6 +328,9 @@
                         config.ShowMissing = document.querySelector('#ShowMissing').checked;
                         config.MaxMissing = parseInt(document.querySelector('#MaxMissing').value, 10) || 0;
                         config.BrowseModeOrder = modes.filter(function (m) { return m.enabled; }).map(function (m) { return m.key; });
+                        config.Sources = sources.map(function (s) {
+                            return { Key: s.key, Enabled: s.Enabled, Url: s.Url, AllowScrape: s.AllowScrape };
+                        });
                         ApiClient.updatePluginConfiguration(pluginId, config).then(function (result) {
                             Dashboard.processPluginConfigurationUpdateResult(result);
                         });
