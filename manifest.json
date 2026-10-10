@@ -9,6 +9,30 @@
         "imageUrl": "",
         "versions": [
             {
+                "version": "2.3.1.0",
+                "changelog": "Settings page fixes: tab class collision with dashboard CSS (tabs now render and the Show missing titles checkbox saves), spacing, and source Kind round-trip on save.",
+                "targetAbi": "12.0.0.0",
+                "sourceUrl": "https://github.com/AvonWilliams/jellyfin-browse-modes/releases/download/v2.3.1.0/browse-modes_2.3.1.0_12.0.0.zip",
+                "checksum": "648e2e61c16f5bd2bfca03d5dcb8ca5e",
+                "timestamp": "2026-10-10T14:39:04Z"
+            },
+            {
+                "version": "2.3.1.0",
+                "changelog": "Settings page fixes: tab class collision with dashboard CSS (tabs now render and the Show missing titles checkbox saves), spacing, and source Kind round-trip on save.",
+                "targetAbi": "12.1.0.0",
+                "sourceUrl": "https://github.com/AvonWilliams/jellyfin-browse-modes/releases/download/v2.3.1.0/browse-modes_2.3.1.0_12.1.0.zip",
+                "checksum": "456a85ed2da069b58daf29c441ea1eb7",
+                "timestamp": "2026-10-10T14:39:04Z"
+            },
+            {
+                "version": "2.3.1.0",
+                "changelog": "Settings page fixes: tab class collision with dashboard CSS (tabs now render and the Show missing titles checkbox saves), spacing, and source Kind round-trip on save.",
+                "targetAbi": "12.2.0.0",
+                "sourceUrl": "https://github.com/AvonWilliams/jellyfin-browse-modes/releases/download/v2.3.1.0/browse-modes_2.3.1.0_12.2.0.zip",
+                "checksum": "dd3887b331dc36424613cd31cb1d5a74",
+                "timestamp": "2026-10-10T14:39:04Z"
+            },
+            {
                 "version": "2.3.0.0",
                 "changelog": "Day/week/month windows on Trending (month = 30-day snapshot aggregation), Netflix union lists (25 films + 25 series per region from 10 weeks), IMDb/Rotten Tomatoes/Netflix year enrichment, poster store negative cache + search sanity, dashboard settings polish.",
                 "targetAbi": "12.0.0.0",
