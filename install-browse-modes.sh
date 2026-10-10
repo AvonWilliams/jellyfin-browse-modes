@@ -140,7 +140,7 @@ if [ "$WEB_ONLY" -eq 0 ]; then
   echo "Fetching latest Browse Modes plugin release..."
   # Read the published manifest (no GitHub API — raw.githubusercontent is not
   # rate-limited the way api.github.com is for unauthenticated servers).
-  manifest=$(curl -fsSL "https://raw.githubusercontent.com/${PLUGIN_REPO}/main/manifest.json") || {
+  manifest=$(curl -fsSL "https://raw.githubusercontent.com/${PLUGIN_REPO}/main/manifest.json?t=$(date +%s)") || {
     echo "Failed to fetch the plugin manifest" >&2
     exit 1
   }
