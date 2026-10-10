@@ -147,7 +147,7 @@ if [ "$WEB_ONLY" -eq 0 ]; then
   plugin_entry=$(printf '%s' "$manifest" | python3 -c '
 import json, sys
 m = json.load(sys.stdin)
-target = sys.argv[1] + ".0.0"
+target = sys.argv[1] + ".0"
 for v in m[0]["versions"]:
     if v.get("targetAbi") == target:
         print(json.dumps(v)); break
