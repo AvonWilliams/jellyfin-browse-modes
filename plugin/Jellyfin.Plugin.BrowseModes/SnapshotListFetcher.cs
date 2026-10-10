@@ -35,21 +35,28 @@ public sealed class SnapshotListFetcher
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly SourceListStore _store;
+    private readonly TmdbDiscoverClient _discoverClient;
     private readonly ILogger<SnapshotListFetcher> _logger;
+
+    // Caps the parallel IMDb year lookups so a refresh cannot hammer the TMDb rate limit.
+    private static readonly SemaphoreSlim ImdbLookupSemaphore = new(8);
 
     /// <summary>
     /// Initializes a new instance of the <see cref="SnapshotListFetcher"/> class.
     /// </summary>
     /// <param name="httpClientFactory">Instance of the <see cref="IHttpClientFactory"/> interface.</param>
     /// <param name="store">Instance of <see cref="SourceListStore"/>.</param>
+    /// <param name="discoverClient">Instance of <see cref="TmdbDiscoverClient"/>, used for IMDb year lookups.</param>
     /// <param name="logger">Instance of the <see cref="ILogger{SnapshotListFetcher}"/> interface.</param>
     public SnapshotListFetcher(
         IHttpClientFactory httpClientFactory,
         SourceListStore store,
+        TmdbDiscoverClient discoverClient,
         ILogger<SnapshotListFetcher> logger)
     {
         _httpClientFactory = httpClientFactory;
         _store = store;
+        _discoverClient = discoverClient;
         _logger = logger;
     }
 
@@ -80,7 +87,8 @@ public sealed class SnapshotListFetcher
         {
             var client = _httpClientFactory.CreateClient();
             var body = await client.GetStringAsync(url, cancellationToken).ConfigureAwait(false);
-            var items = Parse(source.Key, body);
+            var (items, imdbIds) = Parse(source.Key, body);
+            await EnrichImdbYearsAsync(items, imdbIds, cancellationToken).ConfigureAwait(false);
             ResolvePosterUrls(source.Key, items);
             var kind = source.Kind.Equals("trending", StringComparison.OrdinalIgnoreCase)
                 ? SourceListKind.Trending
@@ -95,6 +103,50 @@ public sealed class SnapshotListFetcher
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "Unable to refresh snapshot list {Source} ({Kind})", source.Key, source.Kind);
+        }
+    }
+
+    /// <summary>
+    /// Fills in missing years on IMDb entries by resolving each row's tt id on TMDb. IMDb's
+    /// snapshot JSON carries no year, and the year-aware library matching in the controller only
+    /// applies when one is present. Lookup failures are swallowed so a title that cannot be
+    /// enriched simply stays yearless.
+    /// </summary>
+    private async Task EnrichImdbYearsAsync(IReadOnlyList<SourceListItem> items, IReadOnlyList<(int Index, string TtId)> imdbIds, CancellationToken cancellationToken)
+    {
+        if (imdbIds.Count == 0)
+        {
+            return;
+        }
+
+        var lookups = new Task[imdbIds.Count];
+        for (var i = 0; i < imdbIds.Count; i++)
+        {
+            lookups[i] = LookupImdbYearAsync(items, imdbIds[i], cancellationToken);
+        }
+
+        await Task.WhenAll(lookups).ConfigureAwait(false);
+    }
+
+    private async Task LookupImdbYearAsync(IReadOnlyList<SourceListItem> items, (int Index, string TtId) imdbId, CancellationToken cancellationToken)
+    {
+        await ImdbLookupSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var match = await _discoverClient.FindByImdbIdAsync(imdbId.TtId, cancellationToken).ConfigureAwait(false);
+            var item = items[imdbId.Index];
+            if (match.HasValue && item.Year is null)
+            {
+                item.Year = match.Value.Year;
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogDebug(ex, "Unable to resolve year for IMDb title {TtId}", imdbId.TtId);
+        }
+        finally
+        {
+            ImdbLookupSemaphore.Release();
         }
     }
 
@@ -135,7 +187,7 @@ public sealed class SnapshotListFetcher
         _ => key
     };
 
-    private static IReadOnlyList<SourceListItem> Parse(string key, string body)
+    private static (IReadOnlyList<SourceListItem> Items, IReadOnlyList<(int Index, string TtId)> ImdbIds) Parse(string key, string body)
     {
         if (key.Equals("imdb", StringComparison.Ordinal))
         {
@@ -144,26 +196,27 @@ public sealed class SnapshotListFetcher
 
         if (key.Equals("letterboxd", StringComparison.Ordinal))
         {
-            return ParseLetterboxd(body);
+            return (ParseLetterboxd(body), Array.Empty<(int Index, string TtId)>());
         }
 
         if (key.Equals("rottentomatoes", StringComparison.Ordinal))
         {
-            return ParseRottenTomatoes(body);
+            return (ParseRottenTomatoes(body), Array.Empty<(int Index, string TtId)>());
         }
 
         if (key.StartsWith("netflix", StringComparison.Ordinal))
         {
-            return ParseNetflix(key, body);
+            return (ParseNetflix(key, body), Array.Empty<(int Index, string TtId)>());
         }
 
-        return Array.Empty<SourceListItem>();
+        return (Array.Empty<SourceListItem>(), Array.Empty<(int Index, string TtId)>());
     }
 
-    private static IReadOnlyList<SourceListItem> ParseImdb(string json)
+    private static (IReadOnlyList<SourceListItem> Items, IReadOnlyList<(int Index, string TtId)> ImdbIds) ParseImdb(string json)
     {
         using var document = JsonDocument.Parse(json);
         var items = new List<SourceListItem>();
+        var imdbIds = new List<(int Index, string TtId)>();
         var position = 0;
         foreach (var element in document.RootElement.EnumerateArray())
         {
@@ -182,6 +235,13 @@ public sealed class SnapshotListFetcher
             }
 
             var posterUrl = element.TryGetProperty("image", out var imageElement) ? imageElement.GetString() : null;
+            var link = element.TryGetProperty("link", out var linkElement) ? linkElement.GetString() : null;
+            if (!string.IsNullOrWhiteSpace(link))
+            {
+                // Track the tt id alongside the entry's index so the year can be backfilled
+                // after parsing; stored entries have no id column of their own.
+                imdbIds.Add((items.Count, link.Trim()));
+            }
 
             items.Add(new SourceListItem
             {
@@ -192,7 +252,7 @@ public sealed class SnapshotListFetcher
             });
         }
 
-        return items;
+        return (items, imdbIds);
     }
 
     private static IReadOnlyList<SourceListItem> ParseLetterboxd(string json)

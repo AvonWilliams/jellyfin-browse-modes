@@ -10,6 +10,7 @@ using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using Microsoft.Extensions.Caching.Memory;
 using TMDbLib.Client;
+using TMDbLib.Objects.Find;
 using TMDbLib.Objects.Trending;
 
 namespace Jellyfin.Plugin.BrowseModes;
@@ -182,6 +183,45 @@ public sealed class TmdbDiscoverClient : IDisposable
         }
 
         return BuildPosterUrl(candidates[0].PosterPath);
+    }
+
+    /// <summary>
+    /// Finds a movie's release year and poster path by its IMDb title id.
+    /// </summary>
+    /// <param name="ttId">The IMDb title id, e.g. "tt0111161".</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>The release year and poster path, or null when there is no API key, no match, or
+    /// no release date on the match.</returns>
+    public async Task<(int Year, string? PosterPath)?> FindByImdbIdAsync(string ttId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(ttId))
+        {
+            return null;
+        }
+
+        var cacheKey = $"imdb-{ttId}";
+        if (_memoryCache.TryGetValue(cacheKey, out var cachedObject) && cachedObject is ValueTuple<int, string?> cached)
+        {
+            return cached;
+        }
+
+        if (!HasApiKey)
+        {
+            return null;
+        }
+
+        var container = await TmDbClient.FindAsync(FindExternalSource.Imdb, ttId, cancellationToken)
+            .ConfigureAwait(false);
+        var movie = container?.MovieResults?.FirstOrDefault();
+        var releaseDate = movie?.ReleaseDate;
+        if (releaseDate is null)
+        {
+            return null;
+        }
+
+        var result = (releaseDate.Value.Year, movie?.PosterPath);
+        _memoryCache.Set(cacheKey, result, TimeSpan.FromHours(CacheDurationHours));
+        return result;
     }
 
     /// <summary>
