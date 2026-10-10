@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.BrowseModes.Configuration;
@@ -291,11 +292,13 @@ public sealed class SnapshotListFetcher
 
             var posterUrl = element.TryGetProperty("image", out var imageElement) ? imageElement.GetString() : null;
             var link = element.TryGetProperty("link", out var linkElement) ? linkElement.GetString() : null;
-            if (!string.IsNullOrWhiteSpace(link))
+            // IMDb "link" is a full URL (https://www.imdb.com/title/tt31450459/); TMDb /find wants the bare tt id.
+            var ttIdMatch = link is null ? null : Regex.Match(link, @"tt\d+", RegexOptions.IgnoreCase);
+            if (ttIdMatch?.Success == true)
             {
                 // Track the tt id alongside the entry's index so the year can be backfilled
                 // after parsing; stored entries have no id column of their own.
-                imdbIds.Add((items.Count, link.Trim()));
+                imdbIds.Add((items.Count, ttIdMatch.Value));
             }
 
             items.Add(new SourceListItem
