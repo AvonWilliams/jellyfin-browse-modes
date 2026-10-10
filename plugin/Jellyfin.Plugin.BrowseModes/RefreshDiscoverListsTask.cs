@@ -2,8 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.BrowseModes.Data;
 using MediaBrowser.Model.Tasks;
 using Microsoft.Extensions.Logging;
+using TMDbLib.Objects.Trending;
 
 namespace Jellyfin.Plugin.BrowseModes;
 
@@ -18,18 +20,22 @@ namespace Jellyfin.Plugin.BrowseModes;
 public class RefreshDiscoverListsTask : IScheduledTask
 {
     private readonly TmdbDiscoverClient _discoverClient;
+    private readonly SourceListHistoryStore _historyStore;
     private readonly ILogger<RefreshDiscoverListsTask> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RefreshDiscoverListsTask"/> class.
     /// </summary>
     /// <param name="discoverClient">Instance of <see cref="TmdbDiscoverClient"/>.</param>
+    /// <param name="historyStore">Instance of <see cref="SourceListHistoryStore"/>.</param>
     /// <param name="logger">Instance of the <see cref="ILogger{RefreshDiscoverListsTask}"/> interface.</param>
     public RefreshDiscoverListsTask(
         TmdbDiscoverClient discoverClient,
+        SourceListHistoryStore historyStore,
         ILogger<RefreshDiscoverListsTask> logger)
     {
         _discoverClient = discoverClient;
+        _historyStore = historyStore;
         _logger = logger;
     }
 
@@ -78,6 +84,7 @@ public class RefreshDiscoverListsTask : IScheduledTask
         try
         {
             await _discoverClient.WarmDiscoverListsAsync(cancellationToken, force: true).ConfigureAwait(false);
+            await AppendHistoryAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -87,5 +94,66 @@ public class RefreshDiscoverListsTask : IScheduledTask
         }
 
         progress.Report(100);
+    }
+
+    /// <summary>
+    /// Records the warmed lists as today's snapshot. The served trending lists use the week
+    /// window, but month aggregation needs day-window positions, so the day lists are fetched
+    /// fresh; the top rated lists are reused straight from the warm-up's cache.
+    /// </summary>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    private async Task AppendHistoryAsync(CancellationToken cancellationToken)
+    {
+        var pages = TmdbDiscoverClient.PagesToScan;
+        try
+        {
+            var trendMovies = await _discoverClient
+                .GetTrendingMovieTitlesAsync(TimeWindow.Day, pages, cancellationToken, force: true)
+                .ConfigureAwait(false);
+            var trendSeries = await _discoverClient
+                .GetTrendingSeriesTitlesAsync(TimeWindow.Day, pages, cancellationToken, force: true)
+                .ConfigureAwait(false);
+            var topMovies = await _discoverClient
+                .GetTopRatedMovieTitlesAsync(pages, cancellationToken)
+                .ConfigureAwait(false);
+            var topSeries = await _discoverClient
+                .GetTopRatedSeriesTitlesAsync(pages, cancellationToken)
+                .ConfigureAwait(false);
+
+            var snapshotUtc = DateTime.UtcNow;
+            await _historyStore
+                .AppendSnapshotAsync("tmdb", (int)SourceListKind.Trending, ToItems(trendMovies), snapshotUtc, cancellationToken)
+                .ConfigureAwait(false);
+            await _historyStore
+                .AppendSnapshotAsync("tmdb", (int)SourceListKind.Trending, ToItems(trendSeries), snapshotUtc, cancellationToken)
+                .ConfigureAwait(false);
+            await _historyStore
+                .AppendSnapshotAsync("tmdb", (int)SourceListKind.TopRated, ToItems(topMovies), snapshotUtc, cancellationToken)
+                .ConfigureAwait(false);
+            await _historyStore
+                .AppendSnapshotAsync("tmdb", (int)SourceListKind.TopRated, ToItems(topSeries), snapshotUtc, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Losing a history row only costs a future aggregation window, so it must not fail
+            // the task.
+            _logger.LogDebug(ex, "Unable to append TMDb discover history");
+        }
+    }
+
+    private static IReadOnlyList<SourceListItem> ToItems(IReadOnlyList<TmdbRankedTitle> titles)
+    {
+        var items = new List<SourceListItem>(titles.Count);
+        for (var i = 0; i < titles.Count; i++)
+        {
+            items.Add(new SourceListItem
+            {
+                Rank = i + 1,
+                Title = titles[i].Title ?? string.Empty
+            });
+        }
+
+        return items;
     }
 }

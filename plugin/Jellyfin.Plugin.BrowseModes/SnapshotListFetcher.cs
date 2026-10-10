@@ -36,6 +36,7 @@ public sealed class SnapshotListFetcher
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly SourceListStore _store;
+    private readonly SourceListHistoryStore _historyStore;
     private readonly TmdbDiscoverClient _discoverClient;
     private readonly ILogger<SnapshotListFetcher> _logger;
 
@@ -47,16 +48,19 @@ public sealed class SnapshotListFetcher
     /// </summary>
     /// <param name="httpClientFactory">Instance of the <see cref="IHttpClientFactory"/> interface.</param>
     /// <param name="store">Instance of <see cref="SourceListStore"/>.</param>
+    /// <param name="historyStore">Instance of <see cref="SourceListHistoryStore"/>.</param>
     /// <param name="discoverClient">Instance of <see cref="TmdbDiscoverClient"/>, used for TMDb year lookups.</param>
     /// <param name="logger">Instance of the <see cref="ILogger{SnapshotListFetcher}"/> interface.</param>
     public SnapshotListFetcher(
         IHttpClientFactory httpClientFactory,
         SourceListStore store,
+        SourceListHistoryStore historyStore,
         TmdbDiscoverClient discoverClient,
         ILogger<SnapshotListFetcher> logger)
     {
         _httpClientFactory = httpClientFactory;
         _store = store;
+        _historyStore = historyStore;
         _discoverClient = discoverClient;
         _logger = logger;
     }
@@ -100,6 +104,20 @@ public sealed class SnapshotListFetcher
                 : $"{DisplayName(source.Key)} Top Rated";
 
             _store.ReplaceList(source.Key, kind, title, items);
+
+            try
+            {
+                await _historyStore
+                    .AppendSnapshotAsync(source.Key, (int)kind, items, DateTime.UtcNow, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Losing a history row only costs a future aggregation window, so it must not
+                // fail the refresh.
+                _logger.LogDebug(ex, "Unable to append history for {Source} ({Kind})", source.Key, source.Kind);
+            }
+
             _logger.LogInformation("Refreshed {Source} ({Kind}): {Count} titles", source.Key, source.Kind, items.Count);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

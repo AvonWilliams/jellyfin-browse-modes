@@ -21,6 +21,10 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         // task writes it, both against the same SQLite file.
         serviceCollection.AddSingleton<SourceListStore>();
 
+        // Singleton store for the daily snapshot history; the refreshers append to it and the
+        // cleanup task trims it, all against the same SQLite file.
+        serviceCollection.AddSingleton<SourceListHistoryStore>();
+
         // Singleton fetcher that downloads and parses the snapshot lists.
         serviceCollection.AddSingleton<SnapshotListFetcher>();
 

@@ -100,7 +100,7 @@ public sealed class SourceListStore
         var context = new SourceListDbContext(_options);
         if (!_initialized)
         {
-            context.Database.EnsureCreated();
+            SourceListDbContext.EnsureSchema(context);
             _initialized = true;
         }
 
