@@ -66,8 +66,11 @@
         .tabBar {
             display: flex;
             gap: 8px;
-            margin-bottom: 1em;
+            margin-bottom: 1.5em;
             flex-wrap: wrap;
+        }
+        .bmTabContent {
+            padding-top: 0.5em;
         }
         .tabButton {
             padding: 8px 16px;
@@ -118,7 +121,7 @@
             </div>
 
             <form id="BrowseModesConfigForm">
-                <div class="tabContent" data-tab="tmdb">
+                <div class="bmTabContent" data-tab="tmdb">
                     <div class="inputLabel inputLabelUnfocused">TMDb API</div>
 
                     <div class="inputContainer">
@@ -168,7 +171,7 @@
                     </div>
                 </div>
 
-                <div class="tabContent" data-tab="sources" style="display:none">
+                <div class="bmTabContent" data-tab="sources" style="display:none">
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused">Snapshot sources</label>
                         <div class="fieldDescription">
@@ -180,7 +183,7 @@
                     </div>
                 </div>
 
-                <div class="tabContent" data-tab="display" style="display:none">
+                <div class="bmTabContent" data-tab="display" style="display:none">
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="ShowMissing">Show missing titles</label>
                         <input id="ShowMissing" name="ShowMissing" type="checkbox" is="emby-checkbox" />
@@ -401,6 +404,7 @@
                     return {
                         key: def.key,
                         label: def.label,
+                        kind: existing ? existing.Kind : undefined,
                         Enabled: existing ? existing.Enabled !== false : true,
                         Url: existing ? (existing.Url || '') : '',
                         AllowScrape: existing ? existing.AllowScrape === true : false
@@ -410,7 +414,7 @@
             }
 
             function showTab(name) {
-                document.querySelectorAll('.tabContent').forEach(function (el) {
+                document.querySelectorAll('.bmTabContent').forEach(function (el) {
                     el.style.display = el.getAttribute('data-tab') === name ? 'block' : 'none';
                 });
                 document.querySelectorAll('.tabButton').forEach(function (btn) {
@@ -457,7 +461,7 @@
                         config.MaxMissing = parseInt(document.querySelector('#MaxMissing').value, 10) || 0;
                         config.BrowseModeOrder = modes.filter(function (m) { return m.enabled; }).map(function (m) { return m.key; });
                         config.Sources = sources.map(function (s) {
-                            return { Key: s.key, Enabled: s.Enabled, Url: s.Url, AllowScrape: s.AllowScrape };
+                            return { Key: s.key, Kind: s.kind, Enabled: s.Enabled, Url: s.Url, AllowScrape: s.AllowScrape };
                         });
                         ApiClient.updatePluginConfiguration(pluginId, config).then(function (result) {
                             Dashboard.processPluginConfigurationUpdateResult(result);
