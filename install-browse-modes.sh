@@ -138,25 +138,32 @@ web_update=0
 
 if [ "$WEB_ONLY" -eq 0 ]; then
   echo "Fetching latest Browse Modes plugin release..."
-  release=$(curl -fsSL -H "Accept: application/vnd.github+json" "${API}/${PLUGIN_REPO}/releases/latest") || {
-    echo "Failed to query the latest plugin release from GitHub" >&2
+  # Read the published manifest (no GitHub API — raw.githubusercontent is not
+  # rate-limited the way api.github.com is for unauthenticated servers).
+  manifest=$(curl -fsSL "https://raw.githubusercontent.com/${PLUGIN_REPO}/main/manifest.json") || {
+    echo "Failed to fetch the plugin manifest" >&2
     exit 1
   }
-  asset_url=$(printf '%s' "$release" | tr ',' '\n' | grep 'browser_download_url' \
-    | grep -F "${abi}.zip" | sed 's/.*"browser_download_url"[^"]*"\([^"]*\)".*/\1/' | head -1 || true)
-  if [ -z "$asset_url" ]; then
-    echo "No plugin asset for targetAbi ${abi} in the latest release" >&2
+  plugin_entry=$(printf '%s' "$manifest" | python3 -c '
+import json, sys
+m = json.load(sys.stdin)
+target = sys.argv[1] + ".0.0"
+for v in m[0]["versions"]:
+    if v.get("targetAbi") == target:
+        print(json.dumps(v)); break
+else:
+    sys.exit(1)
+' "$abi") || {
+    echo "No plugin entry for targetAbi ${abi} in the manifest" >&2
     exit 1
-  fi
-
+  }
+  asset_url=$(printf '%s' "$plugin_entry" | python3 -c 'import json,sys; print(json.load(sys.stdin)["sourceUrl"])')
+  latest_ver=$(printf '%s' "$plugin_entry" | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')
   asset_name=$(basename "$asset_url")
   case "$asset_name" in
     "browse-modes_"*"_${abi}.zip") : ;;
     *) echo "Unexpected plugin asset name: ${asset_name}" >&2; exit 1 ;;
   esac
-  # Latest release version, parsed from the asset filename browse-modes_<ver>_<abi>.zip
-  latest_ver="${asset_name#browse-modes_}"
-  latest_ver="${latest_ver%_${abi}.zip}"
 
   # Version currently installed (if any), from the existing plugin's meta.json.
   installed_ver=""
@@ -177,6 +184,12 @@ if [ "$WEB_ONLY" -eq 0 ]; then
     plugin_update=1
     echo "Downloading ${asset_name}"
     curl -fsSL -o "$tmp/plugin.zip" "$asset_url" || { echo "Download failed: ${asset_url}" >&2; exit 1; }
+    # Verify against the checksum recorded in the manifest (CI-built artifact).
+    checksum=$(printf '%s' "$plugin_entry" | python3 -c 'import json,sys; print(json.load(sys.stdin)["checksum"])')
+    if ! printf '%s  %s\n' "$checksum" "$tmp/plugin.zip" | md5sum -c - >/dev/null; then
+      echo "Checksum mismatch for ${asset_name}" >&2
+      exit 1
+    fi
 
     # The zip contains the .dlls and meta.json at its top level (no wrapper
     # dir), so extract to a staging dir and place it into a <name>_<version>
