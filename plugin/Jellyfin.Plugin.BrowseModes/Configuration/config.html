@@ -3,14 +3,65 @@
 <head>
     <title>Browse Modes</title>
     <style>
-        .tileEditorRow {
+        /* Shared flex base for the JS-built editor rows. */
+        .tileEditorRow,
+        .sourceRow {
             display: flex;
             align-items: center;
             gap: 8px;
             padding: 4px 0;
         }
         .tileEditorRow button {
-            min-width: 34px;
+            flex: 0 0 36px;
+            height: 2.4em;
+            padding: 0;
+        }
+        .tileEditorRow .tileLabelCell {
+            flex: 1 1 auto;
+            min-width: 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        /* Source editor column layout; header and data rows share these widths. */
+        .sourceRow .srcEnabled { flex: 0 0 72px; }
+        .sourceRow .srcLabel { flex: 0 0 150px; }
+        .sourceRow .srcUrl { flex: 1 1 auto; min-width: 0; }
+        .sourceRow .srcScrape {
+            flex: 0 0 110px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .sourceHeader {
+            border-bottom: 1px solid var(--jf-palette-divider, rgba(128, 128, 128, 0.4));
+            padding-bottom: 6px;
+            margin-bottom: 4px;
+            color: var(--jf-palette-text-secondary, inherit);
+            font-weight: 600;
+        }
+        /* JS-built native checkboxes: dashboard accent + focus ring. */
+        .tileEditorRow input[type=checkbox],
+        .sourceRow input[type=checkbox] {
+            accent-color: var(--jf-palette-primary-main, #00a4dc);
+            width: 1.2em;
+            height: 1.2em;
+            margin: 0;
+        }
+        .tileEditorRow input:focus-visible,
+        .sourceRow input:focus-visible {
+            outline: 2px solid var(--jf-palette-action-focus, var(--jf-palette-primary-main, #00a4dc));
+            outline-offset: 2px;
+        }
+        /* JS-built native text input, matched to the dashboard emby-input look. */
+        .sourceRow input[type=text] {
+            background: var(--jf-palette-FilledInput-bg, rgba(0, 0, 0, 0.2));
+            border: 0.16em solid var(--jf-palette-FilledInput-borderColor, rgba(128, 128, 128, 0.4));
+            border-radius: 0.2em;
+            color: inherit;
+            font-size: 110%;
+            padding: 0.4em 0.5em;
+            box-sizing: border-box;
         }
         .tabBar {
             display: flex;
@@ -26,15 +77,9 @@
             cursor: pointer;
         }
         .tabButton.active {
-            background: #00a4dc;
+            background: var(--jf-palette-primary-main, #00a4dc);
             color: #fff;
-            border-color: #00a4dc;
-        }
-        .tabContent {
-            display: none;
-        }
-        .tabContent.active {
-            display: block;
+            border-color: var(--jf-palette-primary-main, #00a4dc);
         }
     </style>
 </head>
@@ -73,7 +118,9 @@
             </div>
 
             <form id="BrowseModesConfigForm">
-                <div class="tabContent active" data-tab="tmdb">
+                <div class="tabContent" data-tab="tmdb">
+                    <div class="inputLabel inputLabelUnfocused">TMDb API</div>
+
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="TmdbApiKey">TMDb API key</label>
                         <input id="TmdbApiKey" name="TmdbApiKey" type="text" is="emby-input" />
@@ -99,6 +146,8 @@
                             How long a built list is kept before it is fetched again.
                         </div>
                     </div>
+
+                    <div class="inputLabel inputLabelUnfocused" style="margin-top: 1.4em;">Rank limits</div>
 
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="TrendingMaxRank">Trending rank limit</label>
@@ -234,13 +283,17 @@
                     checkbox.checked = entry.enabled;
                     checkbox.addEventListener('change', function () { entry.enabled = checkbox.checked; });
 
+                    var labelCell = document.createElement('label');
+                    labelCell.className = 'tileLabelCell';
+                    labelCell.appendChild(checkbox);
+
                     var label = document.createElement('span');
                     label.textContent = entry.label;
+                    labelCell.appendChild(label);
 
                     row.appendChild(up);
                     row.appendChild(down);
-                    row.appendChild(checkbox);
-                    row.appendChild(label);
+                    row.appendChild(labelCell);
                     container.appendChild(row);
                 });
             }
@@ -283,24 +336,41 @@
                 var container = document.querySelector('#SourceEditor');
                 container.innerHTML = '';
 
+                var header = document.createElement('div');
+                header.className = 'sourceRow sourceHeader';
+                [
+                    { cls: 'srcEnabled', text: 'Enabled' },
+                    { cls: 'srcLabel', text: 'Source' },
+                    { cls: 'srcUrl', text: 'URL' },
+                    { cls: 'srcScrape', text: 'Allow scrape' }
+                ].forEach(function (cell) {
+                    var span = document.createElement('span');
+                    span.className = cell.cls;
+                    span.textContent = cell.text;
+                    header.appendChild(span);
+                });
+                container.appendChild(header);
+
                 sources.forEach(function (entry) {
                     var row = document.createElement('div');
-                    row.className = 'tileEditorRow';
+                    row.className = 'sourceRow';
 
                     var enabled = document.createElement('input');
                     enabled.type = 'checkbox';
+                    enabled.className = 'srcEnabled';
                     enabled.checked = entry.Enabled;
                     enabled.title = 'Enabled';
                     enabled.addEventListener('change', function () { entry.Enabled = enabled.checked; });
 
                     var label = document.createElement('span');
+                    label.className = 'srcLabel';
                     label.textContent = entry.label;
 
                     var url = document.createElement('input');
                     url.type = 'text';
+                    url.className = 'srcUrl';
                     url.placeholder = 'snapshot URL (empty = built-in default)';
                     url.value = entry.Url || '';
-                    url.style.flex = '1';
                     url.addEventListener('change', function () { entry.Url = url.value.trim(); });
 
                     var scrape = document.createElement('input');
@@ -309,13 +379,17 @@
                     scrape.title = 'Allow scraping as a fallback';
                     scrape.addEventListener('change', function () { entry.AllowScrape = scrape.checked; });
 
-                    var scrapeLabel = document.createElement('span');
-                    scrapeLabel.textContent = 'scrape';
+                    var scrapeLabel = document.createElement('label');
+                    scrapeLabel.className = 'srcScrape';
+                    scrapeLabel.appendChild(scrape);
+
+                    var scrapeText = document.createElement('span');
+                    scrapeText.textContent = 'scrape';
+                    scrapeLabel.appendChild(scrapeText);
 
                     row.appendChild(enabled);
                     row.appendChild(label);
                     row.appendChild(url);
-                    row.appendChild(scrape);
                     row.appendChild(scrapeLabel);
                     container.appendChild(row);
                 });
