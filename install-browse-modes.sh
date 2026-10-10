@@ -124,6 +124,14 @@ case "$major_minor" in
 esac
 echo "Detected Jellyfin ${version} (plugin targetAbi ${abi})"
 
+# The browse-modes web fork is not yet compatible with Jellyfin 12.2 (dashboard
+# crashes on the older bundle); install the plugin only unless the caller
+# explicitly asked for web.
+if [ "$major_minor" = "12.2" ] && [ "$WEB_ONLY" -eq 0 ]; then
+  echo "Web bundle skipped: the browse-modes web fork does not support Jellyfin 12.2 yet"
+  PLUGIN_ONLY=1
+fi
+
 # ---- decide what needs updating (no server files touched yet) ----
 plugin_update=0
 web_update=0
