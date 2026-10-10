@@ -122,16 +122,16 @@ public class RefreshDiscoverListsTask : IScheduledTask
 
             var snapshotUtc = DateTime.UtcNow;
             await _historyStore
-                .AppendSnapshotAsync("tmdb", (int)SourceListKind.Trending, ToItems(trendMovies), snapshotUtc, cancellationToken)
+                .AppendSnapshotAsync("tmdb", (int)SourceListKind.Trending, ToItems(trendMovies, isSeries: false), snapshotUtc, cancellationToken)
                 .ConfigureAwait(false);
             await _historyStore
-                .AppendSnapshotAsync("tmdb", (int)SourceListKind.Trending, ToItems(trendSeries), snapshotUtc, cancellationToken)
+                .AppendSnapshotAsync("tmdb", (int)SourceListKind.Trending, ToItems(trendSeries, isSeries: true), snapshotUtc, cancellationToken)
                 .ConfigureAwait(false);
             await _historyStore
-                .AppendSnapshotAsync("tmdb", (int)SourceListKind.TopRated, ToItems(topMovies), snapshotUtc, cancellationToken)
+                .AppendSnapshotAsync("tmdb", (int)SourceListKind.TopRated, ToItems(topMovies, isSeries: false), snapshotUtc, cancellationToken)
                 .ConfigureAwait(false);
             await _historyStore
-                .AppendSnapshotAsync("tmdb", (int)SourceListKind.TopRated, ToItems(topSeries), snapshotUtc, cancellationToken)
+                .AppendSnapshotAsync("tmdb", (int)SourceListKind.TopRated, ToItems(topSeries, isSeries: true), snapshotUtc, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -142,7 +142,7 @@ public class RefreshDiscoverListsTask : IScheduledTask
         }
     }
 
-    private static IReadOnlyList<SourceListItem> ToItems(IReadOnlyList<TmdbRankedTitle> titles)
+    private static IReadOnlyList<SourceListItem> ToItems(IReadOnlyList<TmdbRankedTitle> titles, bool isSeries)
     {
         var items = new List<SourceListItem>(titles.Count);
         for (var i = 0; i < titles.Count; i++)
@@ -150,7 +150,9 @@ public class RefreshDiscoverListsTask : IScheduledTask
             items.Add(new SourceListItem
             {
                 Rank = i + 1,
-                Title = titles[i].Title ?? string.Empty
+                Title = titles[i].Title ?? string.Empty,
+                Year = titles[i].Year,
+                IsSeries = isSeries
             });
         }
 

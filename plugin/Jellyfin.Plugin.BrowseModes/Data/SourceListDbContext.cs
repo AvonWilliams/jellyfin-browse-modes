@@ -1,3 +1,4 @@
+using System;
 using Microsoft.EntityFrameworkCore;
 
 namespace Jellyfin.Plugin.BrowseModes.Data;
@@ -50,13 +51,34 @@ public sealed class SourceListDbContext : DbContext
         {
             context.Database.EnsureCreated();
             context.Database.ExecuteSqlRaw(HistoryTableSql);
+            try
+            {
+                context.Database.ExecuteSqlRaw(HistoryYearColumnSql);
+            }
+            catch (Exception)
+            {
+                // The column is already present (a fresh database gets it from EnsureCreated);
+                // SQLite has no "add column if not exists", so the duplicate-column error is
+                // swallowed and any older database simply gains the column on the first try.
+            }
+
+            try
+            {
+                context.Database.ExecuteSqlRaw(HistoryIsSeriesColumnSql);
+            }
+            catch (Exception)
+            {
+                // Same swallow as Year, so pre-existing databases gain the column and fresh ones
+                // simply hit the duplicate-column error.
+            }
         }
     }
 
     private static readonly object SchemaLock = new();
 
     // Mirrors the EF model for the history entity, so a pre-existing database gets the same
-    // table and unique index a fresh one receives from EnsureCreated.
+    // table and unique index a fresh one receives from EnsureCreated. The Year and IsSeries columns are added
+    // separately because CREATE TABLE IF NOT EXISTS leaves an older table untouched.
     private const string HistoryTableSql = @"
 CREATE TABLE IF NOT EXISTS ""SourceListHistory"" (
     ""Id"" INTEGER NOT NULL CONSTRAINT ""PK_SourceListHistory"" PRIMARY KEY AUTOINCREMENT,
@@ -64,10 +86,16 @@ CREATE TABLE IF NOT EXISTS ""SourceListHistory"" (
     ""Kind"" INTEGER NOT NULL,
     ""Title"" TEXT NOT NULL,
     ""Rank"" INTEGER NOT NULL,
-    ""SnapshotUtc"" TEXT NOT NULL
+    ""SnapshotUtc"" TEXT NOT NULL,
+    ""Year"" INTEGER NULL,
+    ""IsSeries"" INTEGER NOT NULL DEFAULT 0
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ""IX_SourceListHistory_Source_Kind_Title_SnapshotUtc""
     ON ""SourceListHistory"" (""Source"", ""Kind"", ""Title"", ""SnapshotUtc"");";
+
+    private const string HistoryYearColumnSql = @"ALTER TABLE ""SourceListHistory"" ADD COLUMN ""Year"" INTEGER NULL;";
+
+    private const string HistoryIsSeriesColumnSql = @"ALTER TABLE ""SourceListHistory"" ADD COLUMN ""IsSeries"" INTEGER NOT NULL DEFAULT 0;";
 
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
