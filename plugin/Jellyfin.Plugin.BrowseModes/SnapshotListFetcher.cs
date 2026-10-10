@@ -38,15 +38,15 @@ public sealed class SnapshotListFetcher
     private readonly TmdbDiscoverClient _discoverClient;
     private readonly ILogger<SnapshotListFetcher> _logger;
 
-    // Caps the parallel IMDb year lookups so a refresh cannot hammer the TMDb rate limit.
-    private static readonly SemaphoreSlim ImdbLookupSemaphore = new(8);
+    // Caps the parallel TMDb year lookups so a refresh cannot hammer the TMDb rate limit.
+    private static readonly SemaphoreSlim EnrichmentSemaphore = new(8);
 
     /// <summary>
     /// Initializes a new instance of the <see cref="SnapshotListFetcher"/> class.
     /// </summary>
     /// <param name="httpClientFactory">Instance of the <see cref="IHttpClientFactory"/> interface.</param>
     /// <param name="store">Instance of <see cref="SourceListStore"/>.</param>
-    /// <param name="discoverClient">Instance of <see cref="TmdbDiscoverClient"/>, used for IMDb year lookups.</param>
+    /// <param name="discoverClient">Instance of <see cref="TmdbDiscoverClient"/>, used for TMDb year lookups.</param>
     /// <param name="logger">Instance of the <see cref="ILogger{SnapshotListFetcher}"/> interface.</param>
     public SnapshotListFetcher(
         IHttpClientFactory httpClientFactory,
@@ -89,6 +89,7 @@ public sealed class SnapshotListFetcher
             var body = await client.GetStringAsync(url, cancellationToken).ConfigureAwait(false);
             var (items, imdbIds) = Parse(source.Key, body);
             await EnrichImdbYearsAsync(items, imdbIds, cancellationToken).ConfigureAwait(false);
+            await EnrichYearsByTitleAsync(source.Key, items, cancellationToken).ConfigureAwait(false);
             ResolvePosterUrls(source.Key, items);
             var kind = source.Kind.Equals("trending", StringComparison.OrdinalIgnoreCase)
                 ? SourceListKind.Trending
@@ -130,7 +131,7 @@ public sealed class SnapshotListFetcher
 
     private async Task LookupImdbYearAsync(IReadOnlyList<SourceListItem> items, (int Index, string TtId) imdbId, CancellationToken cancellationToken)
     {
-        await ImdbLookupSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await EnrichmentSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             var match = await _discoverClient.FindByImdbIdAsync(imdbId.TtId, cancellationToken).ConfigureAwait(false);
@@ -146,7 +147,61 @@ public sealed class SnapshotListFetcher
         }
         finally
         {
-            ImdbLookupSemaphore.Release();
+            EnrichmentSemaphore.Release();
+        }
+    }
+
+    /// <summary>
+    /// Fills in missing years on Rotten Tomatoes and Netflix entries by searching each title on
+    /// TMDb. Both sources carry no year, and the year-aware library matching in the controller
+    /// only applies when one is present. Lookup failures are swallowed so a title that cannot be
+    /// enriched simply stays yearless.
+    /// </summary>
+    private async Task EnrichYearsByTitleAsync(string sourceKey, IReadOnlyList<SourceListItem> items, CancellationToken cancellationToken)
+    {
+        if (!sourceKey.Equals("rottentomatoes", StringComparison.Ordinal)
+            && !sourceKey.StartsWith("netflix", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var lookups = new List<Task>();
+        foreach (var item in items)
+        {
+            if (item.Year is not null || string.IsNullOrWhiteSpace(item.Title))
+            {
+                continue;
+            }
+
+            lookups.Add(LookupYearByTitleAsync(item, cancellationToken));
+        }
+
+        if (lookups.Count == 0)
+        {
+            return;
+        }
+
+        await Task.WhenAll(lookups).ConfigureAwait(false);
+    }
+
+    private async Task LookupYearByTitleAsync(SourceListItem item, CancellationToken cancellationToken)
+    {
+        await EnrichmentSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var year = await _discoverClient.SearchForYearAsync(item.Title, item.IsSeries, cancellationToken).ConfigureAwait(false);
+            if (year.HasValue && item.Year is null)
+            {
+                item.Year = year.Value;
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogDebug(ex, "Unable to resolve year for title {Title}", item.Title);
+        }
+        finally
+        {
+            EnrichmentSemaphore.Release();
         }
     }
 

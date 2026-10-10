@@ -186,6 +186,66 @@ public sealed class TmdbDiscoverClient : IDisposable
     }
 
     /// <summary>
+    /// Finds a title's release year by searching TMDb, or null when there is no API key, no
+    /// normalized-title match, or no release date on the match. Successful lookups are cached.
+    /// </summary>
+    /// <param name="title">The title to search for.</param>
+    /// <param name="isSeries">Whether the title is a TV series rather than a movie.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>The release year, or null.</returns>
+    public async Task<int?> SearchForYearAsync(string title, bool isSeries, CancellationToken cancellationToken)
+    {
+        if (!HasApiKey || string.IsNullOrWhiteSpace(title))
+        {
+            return null;
+        }
+
+        var normalizedTitle = NormalizeTitle(title);
+        var cacheKey = $"year-{(isSeries ? "tv" : "movie")}-{normalizedTitle}";
+        if (_memoryCache.TryGetValue(cacheKey, out var cachedObject) && cachedObject is int cachedYear)
+        {
+            return cachedYear;
+        }
+
+        int? year;
+        if (isSeries)
+        {
+            var results = await TmDbClient.SearchTvShowAsync(
+                    title,
+                    0,
+                    false,
+                    0,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            year = results?.Results?
+                .FirstOrDefault(r => NormalizeTitle(r.Name) == normalizedTitle)?
+                .FirstAirDate?.Year;
+        }
+        else
+        {
+            var results = await TmDbClient.SearchMovieAsync(
+                    title,
+                    0,
+                    false,
+                    0,
+                    string.Empty,
+                    0,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            year = results?.Results?
+                .FirstOrDefault(r => NormalizeTitle(r.Title) == normalizedTitle)?
+                .ReleaseDate?.Year;
+        }
+
+        if (year.HasValue)
+        {
+            _memoryCache.Set(cacheKey, year.Value, TimeSpan.FromHours(CacheDurationHours));
+        }
+
+        return year;
+    }
+
+    /// <summary>
     /// Finds a movie's release year and poster path by its IMDb title id.
     /// </summary>
     /// <param name="ttId">The IMDb title id, e.g. "tt0111161".</param>
