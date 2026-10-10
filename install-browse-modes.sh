@@ -117,6 +117,7 @@ fi
 
 major_minor=$(printf '%s' "$version" | cut -d. -f1,2)
 case "$major_minor" in
+  12.2) abi="12.2.0" ;;
   12.1) abi="12.1.0" ;;
   12.0) abi="12.0.0" ;;
   *) echo "Unsupported Jellyfin version ${version}: Browse Modes supports 12.x only" >&2; exit 1 ;;
