@@ -675,6 +675,11 @@ adb install -r jellyfin-androidtv/app/build/outputs/apk/debug/*.apk
   finds it.
 - **It is invisible while a VPN is up on the build machine.** This produced two false "the TV
   is off" readings during development. Check the VPN first.
+- **NordVPN's kill-switch routes *everything* — including a direct ethernet cable to the TV —
+  into the tunnel.** With the kill-switch on, policy routing sends all traffic without Nord's
+  fwmark to `nordtun`, so `adb` and `ping` fail even though the link is physically up (ARP still
+  resolves). Symptom: `ip route get <TV-IP>` shows `dev nordtun`. Fix: `nordvpn disconnect` (or
+  split-tunnel the TV's subnet) before sideloading; reconnect when done.
 - Debug builds carry `applicationIdSuffix = ".debug"`, so they install *beside* the stock app as
   `org.jellyfin.androidtv.debug` and never disturb it. A release build would replace it.
 - Driving the UI with `adb shell input keyevent` works, but `KEYCODE_BACK` exits the app rather

@@ -13,7 +13,124 @@ Design rationale and the architecture decision live in [docs/TECHNICAL.md](./doc
 | 4. CI and release artifacts | ✅ v1.0.1.0 released |
 | 5. Deploy to production | ✅ live on the real server, all three clients |
 
-**Next session:** TBD
+**Next session:** See [`docs/NEXT-SESSION.md`](docs/NEXT-SESSION.md) — two active streams: icon scaling + studio counts verification.
+
+## 2026-08-09 (continued from 08-08)
+
+### Plugin: v2.0.1 — Studio counts endpoint + separate task + landing page
+
+New `GET /Discover/StudioCounts?ParentId=<id>` endpoint returns `{ studioName: itemCount }`
+cached in memory for 24 hours. Replaces client-side N parallel API calls.
+
+**Separate scheduled task**: `RefreshStudioCountsTask` ("Refresh studio item counts")
+appears on its own line in Dashboard → Scheduled Tasks. Runs on startup and every
+24 hours. Can be triggered manually. Uses `ILibraryManager.GetStudios()`.
+
+**Plugin landing page**: Clicking Browse Modes in the catalog now shows an About page
+with plugin description, scheduled task info, and a link to open Settings. The settings
+page is now just the form (API key, pages to scan, cache duration). Two pages:
+`configPage.html` (landing/about) and `config.html` (settings).
+
+**⚠️ To be tested**: Verify the separate task appears in Scheduled Tasks and can be
+triggered manually. Verify the landing page loads when clicking the plugin.
+
+Files: `RefreshStudioCountsTask.cs` (new), `Plugin.cs` (two pages), `configPage.html`
+(new landing page), `config.html` (simplified to just settings), `TmdbDiscoverClient.cs`
+(cache), `DiscoverController.cs` (endpoint), `.csproj` (embedded resource).
+
+Both web clients updated to call `/Discover/StudioCounts` instead of parallel queries.
+
+### Studio icon generation — 226 icons
+
+Agent-driven SVG silhouette generation for film/TV studios. Style spec:
+- 24×24 viewBox, 1.5px stroke, round linecap/linejoin
+- Base: `#FFFFFFE6` (white at 90%) on dark cards
+- Brand accent wash at 0.10–0.18 opacity
+- One dominant shape, no text, no interior detail
+
+**Phase 1**: 90 studios researched, 84 icons (14 simple-icons CDN + 70 generated SVGs)
+**Phase 2**: 200 more across 8 categories (European, Asian, Classic Hollywood, Horror,
+Documentary, Latin American/African, Australian/NZ, Canadian)
+**Total**: 226 icons in `studioIcons.ts` with fuzzy name matching
+
+Icons render as base64 data URIs in `<img>` tags inside the Studios picker tiles
+(at 2× tile size). Matching normalizes both sides: strips punctuation, common suffixes
+(`Pictures`, `Studios`, `Entertainment`, etc.), and extra whitespace.
+
+**Known issue**: Icons not visually rendering in the deployed build. Data URIs and
+rendering code confirmed in bundle. Next session: debug with browser DevTools.
+
+### GitHub repo: `AvonWilliams/studio-icons`
+
+212 extracted SVGs + `catalog.json` + `README.md`. Initial commit staged at
+`/tmp/studio-icons-repo`. Needs push (blocked on gh CLI).
+
+### Showcase tile — multi-level picker navigation
+
+Showcase opens a category grid (Spotlight, Awards, Franchises, Studios, Seasonal,
+Adaptations, Around the World, Staff Picks, Cult Classics). Drilling into a category
+pushes a navigation stack; back button pops it. Studios is wired (opens Studios picker);
+rest are placeholder ("Coming soon").
+
+Studios removed from Showcase (lives in main grid only by user preference).
+
+### Studios picker — sort, size, counts
+
+Studios now a proper picker (`filter: 'StudioIds'`) instead of opening the built-in tab.
+Tiles are 2× regular size (360px grid, 5rem icons). Sort: Random (Fisher-Yates shuffle),
+A–Z, Z–A, Most items, Fewest items. Shuffle button present.
+
+Server-side count caching eliminates the "bake then realign" visual glitch when
+switching to Most/Fewest.
+
+### Back button on all pickers
+
+Every picker header (Mood, Genres, Decades, Studios, etc.) now has a ← back arrow.
+Showcase navigation also has back at root level (returns to main grid).
+
+### Server warmup script
+
+`deploy/warmup-jellyfin.sh` — hits `/health`, `/System/Info`, and `/Users/AuthenticateByName`
+after container start to front-load ASP.NET pipeline JIT. Wired into `jellyfin.service`
+as `ExecStartPost=`. First login was measured at 20–30s cold vs sub-second warm.
+
+### CONTEXT.md updates
+
+- Vault → Showcase flip (with "vault" in avoid list)
+- New term: **Showcase category** (node in Showcase navigation tree)
+- New term: **Placeholder** (category without wired content, shows "coming soon")
+- Updated example dialogue and flagged ambiguities
+
+## 2026-08-08 — Showcase tile + plan cleanup
+
+### Showcase tile added to web grid
+
+Renamed from "Vault" to **Showcase** and added to both 12.x and 10.11 web clients.
+The tile is visually distinct from the others:
+- Separated below the main grid by extra spacing
+- Centered on its own line, ~33% wider (240px max vs 180px grid min)
+- Shows subtitle "Curated collections" — no other tile has one
+- ✨ sparkle icon (`AutoAwesome`), amber/gold color (`#FFB300`)
+
+Types extended: `BrowseMode.Showcase` enum value, optional `subtitle` field on
+`BrowseModeDefinition`. Tile component updated to render subtitle via `<Typography variant='caption'>`.
+
+Clicking Showcase opens the library default view for now — the multi-level picker
+is the next milestone.
+
+### Plan docs cleaned up
+
+- Old Chunk 2 (More menu) removed — changed direction
+- Chunk 3 (Vault) renamed to Chunk 2 (Showcase), now the priority
+- All completed chunks marked ✅
+- Tile inventories updated across PLAN.md, HANDOFF.md, NEXT-SESSION.md
+- NEXT-SESSION.md rewritten with current priorities
+
+### Server warmup script
+
+Added `deploy/warmup-jellyfin.sh` — hits the Jellyfin API after container start to
+front-load ASP.NET JIT compilation. First login was measured at 20-30s on cold boot
+vs sub-second when warm. Wired into `jellyfin.service` as `ExecStartPost=`.
 
 ## 2026-08-04 — Android TV v2.0 port
 
@@ -133,8 +250,8 @@ rather than replacing it. That is arguably the better default; revisit if Play-s
 ever wanted.
 
 **Still open:** nothing blocking. Nice-to-haves are CI in the two fork repos (both artifacts are
-currently built locally and uploaded by hand), light-theme contrast on web, and Decades / Age
-Rating on the TV client.
+currently built locally and uploaded by hand) and light-theme contrast on web. Showcase content (wiring up placeholder categories) and
+per-library/tile toggles (Chunks 1d/1e) are the next feature milestones.
 
 ---
 

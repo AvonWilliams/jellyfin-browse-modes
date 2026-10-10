@@ -25,21 +25,15 @@ Files: `browseModes.ts`, `en-us.json`, `PluginConfiguration.cs`, `config.html`
 
 **Icon/color notes:** Renamed tiles keep their existing icons (Recommend → Hidden Gems, History → Watch Again). Clean up unused icon imports from removed tiles. New tiles in later chunks will need icon + color assignments.
 
-## Chunk 2: Medium — More menu
+## Chunk 2: Medium — Showcase (next priority)
 
-⬜ **2a. New `#/more` route** — Secondary tile page for low-frequency modes  
-⬜ **2b. Move low-priority tiles** — Age Rating, Release Year etc. into More  
-⬜ **2c. Web + Android TV implementations**
+⬜ **2a. Multi-level picker** — Extend the picker pattern to support sub-levels ✅ <em>navigation done</em>  
+⬜ **2b. Showcase categories** — Awards, Seasonal, Franchises, Studios, Adaptations, etc. ✅ <em>tree in place; Studios wired, rest placeholder</em>  
+⬜ **2c. Data model** — Define award/franchise/studio groupings (TMDb collections, genre filters)  
 
-Files: new route/page, `browse/index.tsx` (add "More" tile), TV `BrowseModesFragment.kt`
+Files: `showcaseCategories.ts`, `browse/index.tsx`, possibly plugin endpoints
 
-## Chunk 3: Medium — Vault
-
-⬜ **3a. Multi-level picker** — Extend the picker pattern to support sub-levels  
-⬜ **3b. Vault categories** — Awards, Seasonal, Franchises, Studios, Adaptations, etc.  
-⬜ **3c. Data model** — Define award/franchise/studio groupings (TMDb collections, genre filters)
-
-Files: new Vault components, `browseModes.ts`, possibly plugin endpoints
+> ~~Chunk 2 was originally "More menu" (secondary tile page for low-frequency modes). Removed — changed direction.~~
 
 ## Chunk 4: Hard — Mood & Story Themes ✅
 
@@ -55,15 +49,15 @@ matching items appear.
 
 ## Chunk 5: Polish
 
-⬜ **5a. Icons** — Update tile icons to match new naming  
-⬜ **5b. Icon colors** — Ensure consistency with new/renamed tiles  
-⬜ **5c. Android TV parity** — Port new tiles to TV client
+✅ **5a. Icons** — Update tile icons to match new naming  
+✅ **5b. Icon colors** — Ensure consistency with new/renamed tiles  
+✅ **5c. Android TV parity** — Port new tiles to TV client (done 2026-08-04)
 
 ---
 
 ## Current tile inventory (post-Chunk 1)
 
-### Movies (18 tiles)
+### Movies (19 tiles)
 1. All
 2. Trending
 3. Top Rated
@@ -82,8 +76,9 @@ matching items appear.
 16. Decades
 17. Studios
 18. Age Rating
+19. ✨ Showcase
 
-### TV Shows (17 tiles)
+### TV Shows (18 tiles)
 1. All
 2. Trending
 3. Top Rated
@@ -101,6 +96,7 @@ matching items appear.
 15. Decades
 16. Networks
 17. Age Rating
+18. ✨ Showcase
 
 ---
 
@@ -133,3 +129,4 @@ matching items appear.
 | 2026-08-03 | 1a+1b | Removed 4 tiles + renamed 2. Both codebases updated, built, pushed |
 | 2026-08-03 | 1c | Reordered tiles to match spec. Both codebases updated, built, pushed |
 | 2026-08-03 | 4 | Tag infrastructure + 5 new browse modes. AI-classified 92K TMDb keywords. Infinite-scroll ribbon shelves with sort/shuffle. Grid/shelf toggle. 9-month date cutoffs on New Releases and Just Added. Both codebases built, deployed, released as v2.0.0 |
+| 2026-08-04 | 5c | Android TV v2.0 port complete — all tiles, tag discovery, ribbon shelves, decades, age rating, date cutoffs, sort, grid/shelf toggle, 5 new drawables, 55 locale files cleaned |
