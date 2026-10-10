@@ -409,12 +409,13 @@ public sealed class SnapshotListFetcher
     {
         // The netflix_top10 dataset is tab-separated. A country key ("netflix-<iso2>") selects one
         // country from all-weeks-countries.tsv; the bare "netflix" reads all-weeks-global.tsv.
-        // Only the latest week's film and TV rows are wanted; rank comes from weekly_rank.
+        // The last ten weeks are unioned per title: the best weekly_rank wins, ties broken by
+        // cumulative_weeks_in_top_10 (higher first) and then the most recent week.
         var iso2 = key.StartsWith("netflix-", StringComparison.Ordinal)
             ? key.Substring("netflix-".Length).ToUpperInvariant()
             : null;
 
-        var rows = new List<(int Rank, string Title, string Week, bool IsSeries)>();
+        var rows = new List<(int Rank, string Title, string Week, bool IsSeries, int CumulativeWeeks)>();
         var lines = tsv.Split('\n');
         for (var i = 0; i < lines.Length; i++)
         {
@@ -430,10 +431,11 @@ public sealed class SnapshotListFetcher
             string category;
             string title;
             int rank;
+            int cumulativeWeeks;
             if (iso2 is null)
             {
-                // week, category, weekly_rank, show_title, ...
-                if (fields.Length < 4)
+                // week, category, weekly_rank, show_title, ..., cumulative_weeks_in_top_10
+                if (fields.Length < 9)
                 {
                     continue;
                 }
@@ -445,7 +447,7 @@ public sealed class SnapshotListFetcher
 
                 week = fields[0];
                 category = fields[1];
-                if (!int.TryParse(fields[2], out rank))
+                if (!int.TryParse(fields[2], out rank) || !int.TryParse(fields[8], out cumulativeWeeks))
                 {
                     continue;
                 }
@@ -455,7 +457,8 @@ public sealed class SnapshotListFetcher
             else
             {
                 // country_name, country_iso2, week, category, weekly_rank, show_title, ...
-                if (fields.Length < 6)
+                // cumulative_weeks_in_top_10
+                if (fields.Length < 8)
                 {
                     continue;
                 }
@@ -472,7 +475,7 @@ public sealed class SnapshotListFetcher
 
                 week = fields[2];
                 category = fields[3];
-                if (!int.TryParse(fields[4], out rank))
+                if (!int.TryParse(fields[4], out rank) || !int.TryParse(fields[7], out cumulativeWeeks))
                 {
                     continue;
                 }
@@ -492,22 +495,60 @@ public sealed class SnapshotListFetcher
             }
 
             var isSeries = category.StartsWith("TV", StringComparison.OrdinalIgnoreCase);
-            rows.Add((rank, title.Trim(), week, isSeries));
+            rows.Add((rank, title.Trim(), week, isSeries, cumulativeWeeks));
         }
 
-        var latestWeek = rows.Count > 0 ? rows.Max(r => r.Week) : null;
-        var result = new List<SourceListItem>();
-        var seriesRank = 0;
-        var movieRank = 0;
-        foreach (var row in rows.Where(r => r.Week == latestWeek))
+        var weeks = rows
+            .Select(r => r.Week)
+            .Distinct()
+            .OrderByDescending(w => w, StringComparer.Ordinal)
+            .Take(10)
+            .ToList();
+        var window = rows.Where(r => weeks.Contains(r.Week));
+
+        // Re-rank within each series/movie group so English and non-English rows do not share a
+        // rank (the dataset ranks them independently per language). Films come first, then TV, the
+        // same group order the previous per-week re-ranking produced; rank is the position in the
+        // merged list and the final list is capped at 50 entries.
+        return UnionAndRank(window, isSeries: false)
+            .Concat(UnionAndRank(window, isSeries: true))
+            .Select((u, index) => new SourceListItem { Rank = index + 1, Title = u.Title, Year = null, IsSeries = u.IsSeries })
+            .Take(50)
+            .ToList();
+    }
+
+    private static IReadOnlyList<(string Title, bool IsSeries)> UnionAndRank(
+        IEnumerable<(int Rank, string Title, string Week, bool IsSeries, int CumulativeWeeks)> rows, bool isSeries)
+    {
+        // Union per title: best weekly_rank, highest cumulative weeks on the chart, newest week.
+        var best = new Dictionary<string, (int Rank, int CumulativeWeeks, string Week)>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in rows)
         {
-            // Re-rank within each series/movie group so English and non-English rows do not share
-            // a rank (the dataset ranks them independently per language).
-            var rank = row.IsSeries ? ++seriesRank : ++movieRank;
-            result.Add(new SourceListItem { Rank = rank, Title = row.Title, Year = null, IsSeries = row.IsSeries });
+            if (row.IsSeries != isSeries)
+            {
+                continue;
+            }
+
+            if (best.TryGetValue(row.Title, out var agg))
+            {
+                best[row.Title] = (
+                    Math.Min(agg.Rank, row.Rank),
+                    Math.Max(agg.CumulativeWeeks, row.CumulativeWeeks),
+                    string.CompareOrdinal(row.Week, agg.Week) > 0 ? row.Week : agg.Week);
+            }
+            else
+            {
+                best[row.Title] = (row.Rank, row.CumulativeWeeks, row.Week);
+            }
         }
 
-        return result;
+        return best
+            .OrderBy(kv => kv.Value.Rank)
+            .ThenByDescending(kv => kv.Value.CumulativeWeeks)
+            .ThenByDescending(kv => kv.Value.Week, StringComparer.Ordinal)
+            .Take(25)
+            .Select(kv => (kv.Key, isSeries))
+            .ToList();
     }
 
     private static List<string> SplitCsvLine(string line)
