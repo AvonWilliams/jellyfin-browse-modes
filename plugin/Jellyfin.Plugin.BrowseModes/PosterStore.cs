@@ -29,6 +29,9 @@ public sealed class PosterStore
 
     private const char SearchSeparator = '\u001f';
 
+    // Serializes the download section so concurrent first requests do not double-download.
+    private static readonly SemaphoreSlim DownloadLock = new(1, 1);
+
     private readonly string _posterDirectory;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly TmdbDiscoverClient _discoverClient;
@@ -155,27 +158,56 @@ public sealed class PosterStore
         var filePath = Path.Combine(_posterDirectory, ComputeKey(spec) + ".jpg");
         if (File.Exists(filePath))
         {
+            TryDeleteFile(filePath + ".miss");
             return filePath;
+        }
+
+        var missPath = filePath + ".miss";
+        if (File.Exists(missPath))
+        {
+            return null;
         }
 
         var remoteUrl = await ResolveRemoteUrlAsync(spec, cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrEmpty(remoteUrl))
         {
+            MarkMiss(missPath);
             return null;
         }
 
+        await DownloadLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            if (File.Exists(filePath))
+            {
+                TryDeleteFile(missPath);
+                return filePath;
+            }
+
+            if (File.Exists(missPath))
+            {
+                return null;
+            }
+
             var client = _httpClientFactory.CreateClient();
             var bytes = await client.GetByteArrayAsync(remoteUrl, cancellationToken).ConfigureAwait(false);
-            await File.WriteAllBytesAsync(filePath, bytes, cancellationToken).ConfigureAwait(false);
+            var tempPath = filePath + ".tmp";
+            await File.WriteAllBytesAsync(tempPath, bytes, cancellationToken).ConfigureAwait(false);
+            File.Move(tempPath, filePath, overwrite: true);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "Unable to cache poster {Spec}", spec);
+            MarkMiss(missPath);
+            TryDeleteFile(filePath + ".tmp");
             return null;
         }
+        finally
+        {
+            DownloadLock.Release();
+        }
 
+        TryDeleteFile(missPath);
         return filePath;
     }
 
@@ -206,6 +238,13 @@ public sealed class PosterStore
         var removed = 0;
         foreach (var file in Directory.EnumerateFiles(_posterDirectory))
         {
+            var extension = Path.GetExtension(file);
+            if (!extension.Equals(".jpg", StringComparison.OrdinalIgnoreCase)
+                && !extension.Equals(".miss", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
             try
             {
                 if (File.GetLastWriteTimeUtc(file) < cutoff)
@@ -221,6 +260,31 @@ public sealed class PosterStore
         }
 
         return removed;
+    }
+
+    private void MarkMiss(string missPath)
+    {
+        try
+        {
+            File.WriteAllText(missPath, string.Empty);
+            Touch(missPath);
+        }
+        catch
+        {
+            // Best effort; a failed marker just means the miss is not cached.
+        }
+    }
+
+    private static void TryDeleteFile(string filePath)
+    {
+        try
+        {
+            File.Delete(filePath);
+        }
+        catch
+        {
+            // Best effort; a locked or missing file is simply skipped.
+        }
     }
 
     private async Task<string?> ResolveRemoteUrlAsync(string spec, CancellationToken cancellationToken)

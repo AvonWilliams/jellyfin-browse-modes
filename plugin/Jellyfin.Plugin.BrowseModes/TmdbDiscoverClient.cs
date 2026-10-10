@@ -160,8 +160,51 @@ public sealed class TmdbDiscoverClient : IDisposable
                 cancellationToken)
             .ConfigureAwait(false);
 
-        var match = results?.Results?.FirstOrDefault(r => !string.IsNullOrWhiteSpace(r.PosterPath));
-        return match is null ? null : BuildPosterUrl(match.PosterPath);
+        var normalizedTitle = NormalizeTitle(title);
+        var candidates = results?.Results?
+            .Where(r => !string.IsNullOrWhiteSpace(r.PosterPath)
+                && NormalizeTitle(r.Title) == normalizedTitle)
+            .ToList();
+        if (candidates is null || candidates.Count == 0)
+        {
+            return null;
+        }
+
+        if (year.HasValue)
+        {
+            var yearMatches = candidates
+                .Where(r => r.ReleaseDate?.Year >= year.Value - 1 && r.ReleaseDate?.Year <= year.Value + 1)
+                .ToList();
+            if (yearMatches.Count > 0)
+            {
+                candidates = yearMatches;
+            }
+        }
+
+        return BuildPosterUrl(candidates[0].PosterPath);
+    }
+
+    /// <summary>
+    /// Normalizes a title for name matching: lowercase, alphanumeric only. Mirrors the
+    /// controller's normalization so poster picks agree with library matching.
+    /// </summary>
+    private static string NormalizeTitle(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return string.Empty;
+        }
+
+        var builder = new System.Text.StringBuilder();
+        foreach (var c in name.ToLowerInvariant())
+        {
+            if (char.IsLetterOrDigit(c))
+            {
+                builder.Append(c);
+            }
+        }
+
+        return builder.ToString();
     }
 
     /// <summary>
