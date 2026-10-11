@@ -92,8 +92,8 @@ Only **Trending** and **Top Rated** need it — every other tile works without o
 
 ### 2. The web client
 
-Download the latest `jellyfin-web-browse-modes-<version>.zip` from [Releases](../../releases).
-At the time of writing the file is `jellyfin-web-browse-modes-2.0.0.zip`. Pick the newest one.
+Download the latest `jellyfin-web-browse-modes-<version>.zip` from
+[the web fork releases](https://github.com/AvonWilliams/jellyfin-web/releases).
 
 The zip extracts its files at the top level (no `dist/` wrapper), so unzip into a fresh directory
 before copying — otherwise the cp will fail with "no such file or directory".
@@ -101,7 +101,7 @@ before copying — otherwise the cp will fail with "no such file or directory".
 **On Docker:**
 
 ```bash
-mkdir -p /tmp/jbm && unzip -d /tmp/jbm jellyfin-web-browse-modes-2.0.0.zip
+mkdir -p /tmp/jbm && unzip -d /tmp/jbm jellyfin-web-browse-modes-<version>.zip
 docker cp /tmp/jbm/. <container>:/jellyfin/jellyfin-web/
 sudo rm -rf /tmp/jbm
 ```
@@ -112,7 +112,7 @@ The web directory is `/usr/share/jellyfin/web/`. Back it up first, then replace:
 
 ```bash
 sudo cp -a /usr/share/jellyfin/web /usr/share/jellyfin/web.bak
-mkdir -p /tmp/jbm && unzip -d /tmp/jbm jellyfin-web-browse-modes-2.0.0.zip
+mkdir -p /tmp/jbm && unzip -d /tmp/jbm jellyfin-web-browse-modes-<version>.zip
 sudo cp -a /tmp/jbm/. /usr/share/jellyfin/web/
 sudo rm -rf /tmp/jbm
 ```
@@ -187,11 +187,11 @@ keeping it would have meant forking the server. Dropping one tile was the better
 
 ## Compatibility
 
-Built against **Jellyfin 12.0-rc3** and **Jellyfin 10.11.11** (plugin only). Android TV: **0.19.9**.
+Built against **Jellyfin 12.2** (web client) and **12.0/12.1/12.2** (plugin). Android TV: **0.19.9**.
 
-> **The plugin works on both 10.11.x (stable) and 12.x.** Both web and TV clients target
-> 10.11 and 12.x. The 10.11 web backport lives on the `browse-modes-10.11` branch. See the
-> [back-port scoping](docs/BACKPORT-10.11.md) for details. A Jellyfin update will
+> **The plugin works on both 10.11.x and 12.x.** The web client now targets **12.2 only**; the TV
+> client targets 10.11 and 12.x. The 10.11 web backport lives on the `browse-modes-10.11` branch.
+> See the [back-port scoping](docs/BACKPORT-10.11.md) for details. A Jellyfin update will
 overwrite the web build, and the TV app will not auto-update — see the technical reference for
 how to re-apply to a newer release.
 
