@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.BrowseModes;
 
 /// <summary>
-/// Deletes cached poster images that have not been served for a week.
+/// Deletes cached poster images that have not been served for two months.
 /// </summary>
 public class CleanupPostersTask : IScheduledTask
 {
@@ -30,7 +30,7 @@ public class CleanupPostersTask : IScheduledTask
     public string Name => "Clean up cached source posters";
 
     /// <inheritdoc />
-    public string Description => "Deletes cached poster images that have not been served for a week.";
+    public string Description => "Deletes cached poster images that have not been served for two months.";
 
     /// <inheritdoc />
     public string Category => "Library";
@@ -60,7 +60,7 @@ public class CleanupPostersTask : IScheduledTask
     {
         progress.Report(0);
 
-        var removed = _posterStore.Cleanup(TimeSpan.FromDays(7));
+        var removed = _posterStore.Cleanup(TimeSpan.FromDays(60));
         _logger.LogInformation("Removed {Count} unused poster images", removed);
 
         progress.Report(100);

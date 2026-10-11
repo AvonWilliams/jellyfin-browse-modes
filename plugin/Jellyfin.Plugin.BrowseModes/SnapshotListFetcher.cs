@@ -42,6 +42,7 @@ public sealed class SnapshotListFetcher
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly SourceListStore _store;
     private readonly TmdbDiscoverClient _discoverClient;
+    private readonly PosterStore _posterStore;
     private readonly ILogger<SnapshotListFetcher> _logger;
 
     // Caps the parallel TMDb year lookups so a refresh cannot hammer the TMDb rate limit.
@@ -53,16 +54,19 @@ public sealed class SnapshotListFetcher
     /// <param name="httpClientFactory">Instance of the <see cref="IHttpClientFactory"/> interface.</param>
     /// <param name="store">Instance of <see cref="SourceListStore"/>.</param>
     /// <param name="discoverClient">Instance of <see cref="TmdbDiscoverClient"/>, used for TMDb year lookups.</param>
+    /// <param name="posterStore">Instance of <see cref="PosterStore"/>, used to warm posters into the cache.</param>
     /// <param name="logger">Instance of the <see cref="ILogger{SnapshotListFetcher}"/> interface.</param>
     public SnapshotListFetcher(
         IHttpClientFactory httpClientFactory,
         SourceListStore store,
         TmdbDiscoverClient discoverClient,
+        PosterStore posterStore,
         ILogger<SnapshotListFetcher> logger)
     {
         _httpClientFactory = httpClientFactory;
         _store = store;
         _discoverClient = discoverClient;
+        _posterStore = posterStore;
         _logger = logger;
     }
 
@@ -96,7 +100,7 @@ public sealed class SnapshotListFetcher
             var (items, imdbIds) = Parse(source.Key, body);
             await EnrichImdbYearsAsync(items, imdbIds, cancellationToken).ConfigureAwait(false);
             await EnrichYearsByTitleAsync(source.Key, items, cancellationToken).ConfigureAwait(false);
-            ResolvePosterUrls(source.Key, items);
+            var posterSpecs = ResolvePosterUrls(source.Key, items);
             var kind = source.Kind.Equals("trending", StringComparison.OrdinalIgnoreCase)
                 ? SourceListKind.Trending
                 : SourceListKind.TopRated;
@@ -105,6 +109,10 @@ public sealed class SnapshotListFetcher
                 : $"{DisplayName(source.Key)} Top Rated";
 
             _store.ReplaceList(source.Key, kind, title, items);
+
+            // Warm posters after the list is live so a slow download never delays the ranked data;
+            // the warm is best-effort and never fails the refresh.
+            await WarmPostersAsync(posterSpecs, cancellationToken).ConfigureAwait(false);
 
             _logger.LogInformation("Refreshed {Source} ({Kind}): {Count} titles", source.Key, source.Kind, items.Count);
         }
@@ -213,20 +221,49 @@ public sealed class SnapshotListFetcher
         }
     }
 
-    private static IReadOnlyList<SourceListItem> ResolvePosterUrls(string sourceKey, IReadOnlyList<SourceListItem> items)
+    private IReadOnlyList<string> ResolvePosterUrls(string sourceKey, IReadOnlyList<SourceListItem> items)
     {
         // Netflix titles are often generic ("UNABOMBER", "The Widower"), so hint the search with
         // the word "netflix" to avoid mismatching an unrelated film of the same name.
         var hint = sourceKey.StartsWith("netflix", StringComparison.Ordinal) ? " netflix" : string.Empty;
 
+        var specs = new List<string>(items.Count);
         foreach (var item in items)
         {
             // Look every title up on TMDb so all posters share the w342 size, regardless of source.
-            item.PosterUrl = PosterStore.EncodeProxyUrl(
-                PosterStore.SearchPrefix + item.Title + hint + '\u001f' + (item.Year?.ToString() ?? string.Empty));
+            var spec = PosterStore.SearchPrefix + item.Title + hint + '\u001f' + (item.Year?.ToString() ?? string.Empty);
+            specs.Add(spec);
+            item.PosterUrl = PosterStore.EncodeProxyUrl(spec);
         }
 
-        return items;
+        return specs;
+    }
+
+    /// <summary>
+    /// Pre-fetches each poster into the on-disk cache so the first client request serves from disk
+    /// instead of triggering a slow TMDb lookup. Kept sequential because TMDb rate-limits searches
+    /// and <see cref="PosterStore"/> already serialises downloads; failures are swallowed so one bad
+    /// title never aborts the refresh.
+    /// </summary>
+    private async Task WarmPostersAsync(IReadOnlyList<string> posterSpecs, CancellationToken cancellationToken)
+    {
+        foreach (var spec in posterSpecs)
+        {
+            try
+            {
+                await _posterStore.GetOrDownloadAsync(spec, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                if (ex is OperationCanceledException)
+                {
+                    _logger.LogDebug("Poster warm cancelled");
+                    return;
+                }
+
+                _logger.LogDebug(ex, "Unable to warm poster {Spec}", spec);
+            }
+        }
     }
 
     private static string? ResolveUrl(SourceListConfig source)

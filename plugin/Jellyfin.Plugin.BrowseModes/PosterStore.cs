@@ -5,7 +5,10 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Data.Enums;
 using MediaBrowser.Common.Configuration;
+using MediaBrowser.Controller.Entities;
+using MediaBrowser.Controller.Library;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.BrowseModes;
@@ -35,6 +38,7 @@ public sealed class PosterStore
     private readonly string _posterDirectory;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly TmdbDiscoverClient _discoverClient;
+    private readonly ILibraryManager _libraryManager;
     private readonly ILogger<PosterStore> _logger;
 
     /// <summary>
@@ -43,17 +47,20 @@ public sealed class PosterStore
     /// <param name="applicationPaths">Instance of the <see cref="IApplicationPaths"/> interface.</param>
     /// <param name="httpClientFactory">Instance of the <see cref="IHttpClientFactory"/> interface.</param>
     /// <param name="discoverClient">Instance of <see cref="TmdbDiscoverClient"/>, used for poster lookups.</param>
+    /// <param name="libraryManager">Instance of the <see cref="ILibraryManager"/> interface, used to detect library titles.</param>
     /// <param name="logger">Instance of the <see cref="ILogger{PosterStore}"/> interface.</param>
     public PosterStore(
         IApplicationPaths applicationPaths,
         IHttpClientFactory httpClientFactory,
         TmdbDiscoverClient discoverClient,
+        ILibraryManager libraryManager,
         ILogger<PosterStore> logger)
     {
         _posterDirectory = Path.Combine(applicationPaths.DataPath, "browse-modes", "posters");
         Directory.CreateDirectory(_posterDirectory);
         _httpClientFactory = httpClientFactory;
         _discoverClient = discoverClient;
+        _libraryManager = libraryManager;
         _logger = logger;
     }
 
@@ -194,6 +201,12 @@ public sealed class PosterStore
             var tempPath = filePath + ".tmp";
             await File.WriteAllBytesAsync(tempPath, bytes, cancellationToken).ConfigureAwait(false);
             File.Move(tempPath, filePath, overwrite: true);
+
+            // Record the raw spec so cleanup can later recover the title/year this poster was for.
+            if (spec.StartsWith(SearchPrefix, StringComparison.Ordinal))
+            {
+                WriteSpecSidecar(filePath, spec);
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -239,27 +252,138 @@ public sealed class PosterStore
         foreach (var file in Directory.EnumerateFiles(_posterDirectory))
         {
             var extension = Path.GetExtension(file);
-            if (!extension.Equals(".jpg", StringComparison.OrdinalIgnoreCase)
-                && !extension.Equals(".miss", StringComparison.OrdinalIgnoreCase))
+            if (extension.Equals(".jpg", StringComparison.OrdinalIgnoreCase))
             {
-                continue;
+                removed += CleanupPoster(file, cutoff);
             }
-
-            try
+            else if (extension.Equals(".miss", StringComparison.OrdinalIgnoreCase))
             {
-                if (File.GetLastWriteTimeUtc(file) < cutoff)
+                try
                 {
-                    File.Delete(file);
-                    removed++;
+                    if (File.GetLastWriteTimeUtc(file) < cutoff)
+                    {
+                        File.Delete(file);
+                        removed++;
+                    }
                 }
-            }
-            catch
-            {
-                // Best effort; a locked or missing file is simply skipped.
+                catch
+                {
+                    // Best effort; a locked or missing file is simply skipped.
+                }
             }
         }
 
         return removed;
+    }
+
+    /// <summary>
+    /// Cleans a single poster file, removing it because it has not been served within the cutoff
+    /// window or because its title now exists in the library. The poster's <c>.spec</c> sidecar and
+    /// <c>.miss</c> marker are removed alongside it.
+    /// </summary>
+    private int CleanupPoster(string filePath, DateTime cutoff)
+    {
+        try
+        {
+            if (File.GetLastWriteTimeUtc(filePath) < cutoff || ExistsInLibrary(filePath))
+            {
+                DeletePoster(filePath);
+                return 1;
+            }
+        }
+        catch
+        {
+            // Best effort; a locked or missing file is simply skipped.
+        }
+
+        return 0;
+    }
+
+    /// <summary>
+    /// Returns whether a poster's title (and year, when recorded) now exists in the library, so a
+    /// poster whose title the user has since added can be dropped even while the file is still fresh.
+    /// </summary>
+    private bool ExistsInLibrary(string filePath)
+    {
+        var specPath = Path.ChangeExtension(filePath, ".spec");
+        if (!File.Exists(specPath))
+        {
+            return false;
+        }
+
+        string spec;
+        try
+        {
+            spec = File.ReadAllText(specPath);
+        }
+        catch
+        {
+            return false;
+        }
+
+        if (!spec.StartsWith(SearchPrefix, StringComparison.Ordinal)
+            || !TrySplitSearch(spec.Substring(SearchPrefix.Length), out var title, out var year))
+        {
+            return false;
+        }
+
+        try
+        {
+            var query = new InternalItemsQuery
+            {
+                Name = title,
+                IncludeItemTypes = [BaseItemKind.Movie, BaseItemKind.Series],
+                Recursive = true
+            };
+
+            if (year.HasValue)
+            {
+                query.Years = [year.Value];
+            }
+
+            var matches = _libraryManager.GetItemList(query);
+
+            if (year.HasValue)
+            {
+                // Name plus year is a confident match: any hit means the title is now owned.
+                return matches.Count > 0;
+            }
+
+            // A bare name match is ambiguous (remakes and same-titled shows share a name), so only
+            // delete when it resolves to exactly one library item.
+            if (matches.Count != 1)
+            {
+                _logger.LogDebug("Skipping library cleanup for poster {Title}: {Count} items share the name", title, matches.Count);
+                return false;
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            // Best effort; a failed lookup just leaves the poster for the age rule to remove.
+            _logger.LogDebug(ex, "Unable to check the library for poster title {Title}", title);
+            return false;
+        }
+    }
+
+    private void DeletePoster(string filePath)
+    {
+        TryDeleteFile(filePath);
+        TryDeleteFile(Path.ChangeExtension(filePath, ".spec"));
+        TryDeleteFile(filePath + ".miss");
+    }
+
+    private void WriteSpecSidecar(string filePath, string spec)
+    {
+        try
+        {
+            File.WriteAllText(Path.ChangeExtension(filePath, ".spec"), spec);
+        }
+        catch
+        {
+            // Best effort; a missing sidecar only means the poster is cleaned by age, not by title.
+        }
     }
 
     private void MarkMiss(string missPath)
