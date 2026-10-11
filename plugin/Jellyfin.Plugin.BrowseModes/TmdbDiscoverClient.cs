@@ -494,6 +494,14 @@ public sealed class TmdbDiscoverClient : IDisposable
         }
 
         var items = libraryManager.GetItemList(query);
+
+        if (type.Equals("person", StringComparison.OrdinalIgnoreCase))
+        {
+            var personCounts = BuildPersonCounts(items, libraryManager);
+            SetCounts(cacheKey, personCounts);
+            return personCounts;
+        }
+
         var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in items)
         {
@@ -548,6 +556,42 @@ public sealed class TmdbDiscoverClient : IDisposable
         }
 
         SetCounts(cacheKey, counts);
+        return counts;
+    }
+
+    /// <summary>
+    /// Counts the distinct persons of the Actor, Director and Writer kinds across the given
+    /// items, keyed by the person kind name.
+    /// </summary>
+    private static Dictionary<string, int> BuildPersonCounts(IReadOnlyList<BaseItem> items, ILibraryManager libraryManager)
+    {
+        var names = new Dictionary<PersonKind, HashSet<string>>
+        {
+            [PersonKind.Actor] = new(StringComparer.OrdinalIgnoreCase),
+            [PersonKind.Director] = new(StringComparer.OrdinalIgnoreCase),
+            [PersonKind.Writer] = new(StringComparer.OrdinalIgnoreCase)
+        };
+
+        var peopleByItem = libraryManager.GetPeopleByItems(items.Select(item => item.Id).ToList());
+        foreach (var people in peopleByItem.Values)
+        {
+            foreach (var person in people)
+            {
+                if (string.IsNullOrWhiteSpace(person.Name) || !names.TryGetValue(person.Type, out var kindNames))
+                {
+                    continue;
+                }
+
+                kindNames.Add(person.Name);
+            }
+        }
+
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (kind, kindNames) in names)
+        {
+            counts[kind.ToString()] = kindNames.Count;
+        }
+
         return counts;
     }
 

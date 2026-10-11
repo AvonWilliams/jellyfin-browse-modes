@@ -20,7 +20,7 @@ namespace Jellyfin.Plugin.BrowseModes;
 /// </remarks>
 public class RefreshBrowseModeCountsTask : IScheduledTask
 {
-    private static readonly string[] Types = ["genre", "rating", "tag", "decade", "studio"];
+    private static readonly string[] Types = ["genre", "rating", "tag", "decade", "studio", "person"];
 
     private readonly TmdbDiscoverClient _discoverClient;
     private readonly ILibraryManager _libraryManager;
@@ -46,7 +46,7 @@ public class RefreshBrowseModeCountsTask : IScheduledTask
     public string Name => "Refresh browse mode counts";
 
     /// <inheritdoc />
-    public string Description => "Pre-computes picker item counts (genre, rating, tag, decade, studio) for every library.";
+    public string Description => "Pre-computes picker item counts (genre, rating, tag, decade, studio, person) for every library.";
 
     /// <inheritdoc />
     public string Category => "Library";

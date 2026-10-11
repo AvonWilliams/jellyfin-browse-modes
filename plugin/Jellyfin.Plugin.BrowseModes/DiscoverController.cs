@@ -54,17 +54,11 @@ public class DiscoverController : ControllerBase
     /// </summary>
     private const string DefaultSource = "tmdb";
 
-    /// <summary>
-    /// The rolling window, in days, aggregated for the month trending view.
-    /// </summary>
-    private const int MonthDays = 30;
-
     private readonly IUserManager _userManager;
     private readonly ILibraryManager _libraryManager;
     private readonly IDtoService _dtoService;
     private readonly TmdbDiscoverClient _discoverClient;
     private readonly SourceListStore _sourceListStore;
-    private readonly SourceListHistoryStore _historyStore;
     private readonly PosterStore _posterStore;
 
     /// <summary>
@@ -75,7 +69,6 @@ public class DiscoverController : ControllerBase
     /// <param name="dtoService">Instance of the <see cref="IDtoService"/> interface.</param>
     /// <param name="discoverClient">Instance of <see cref="TmdbDiscoverClient"/>.</param>
     /// <param name="sourceListStore">Instance of <see cref="SourceListStore"/>.</param>
-    /// <param name="historyStore">Instance of <see cref="SourceListHistoryStore"/>.</param>
     /// <param name="posterStore">Instance of <see cref="PosterStore"/>.</param>
     public DiscoverController(
         IUserManager userManager,
@@ -83,7 +76,6 @@ public class DiscoverController : ControllerBase
         IDtoService dtoService,
         TmdbDiscoverClient discoverClient,
         SourceListStore sourceListStore,
-        SourceListHistoryStore historyStore,
         PosterStore posterStore)
     {
         _userManager = userManager;
@@ -91,7 +83,6 @@ public class DiscoverController : ControllerBase
         _dtoService = dtoService;
         _discoverClient = discoverClient;
         _sourceListStore = sourceListStore;
-        _historyStore = historyStore;
         _posterStore = posterStore;
     }
 
@@ -103,8 +94,6 @@ public class DiscoverController : ControllerBase
     /// <param name="fields">Optional. Comma delimited list of fields to return.</param>
     /// <param name="limit">Optional. The maximum number of items to return.</param>
     /// <param name="source">Optional. The ranked data source; only "tmdb" is implemented.</param>
-    /// <param name="window">Optional. The trending window: "day", "week" (the default), or "month",
-    /// the last of which is aggregated from the stored daily snapshots.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <response code="200">Trending movies returned.</response>
     /// <returns>The trending movies available locally, plus missing-title stubs.</returns>
@@ -116,7 +105,6 @@ public class DiscoverController : ControllerBase
         [FromQuery] string? fields,
         [FromQuery] int limit = 24,
         [FromQuery] string? source = null,
-        [FromQuery] string? window = null,
         CancellationToken cancellationToken = default)
     {
         var resolvedSource = ResolveSource(source);
@@ -125,15 +113,9 @@ public class DiscoverController : ControllerBase
             return Ok(new DiscoverRankedResult { Source = resolvedSource });
         }
 
-        if (IsMonthWindow(window))
-        {
-            return await BuildMonthResultAsync(resolvedSource, BaseItemKind.Movie, userId, parentId, ParseFields(fields), limit, cancellationToken)
-                .ConfigureAwait(false);
-        }
-
         if (resolvedSource.Equals(DefaultSource, StringComparison.OrdinalIgnoreCase))
         {
-            var timeWindow = IsDayWindow(window) ? TimeWindow.Day : TimeWindow.Week;
+            var timeWindow = TimeWindow.Week;
             var titles = await _discoverClient
                 .GetTrendingMovieTitlesAsync(timeWindow, TmdbDiscoverClient.PagesToScan, cancellationToken)
                 .ConfigureAwait(false);
@@ -152,8 +134,6 @@ public class DiscoverController : ControllerBase
     /// <param name="fields">Optional. Comma delimited list of fields to return.</param>
     /// <param name="limit">Optional. The maximum number of items to return.</param>
     /// <param name="source">Optional. The ranked data source; only "tmdb" is implemented.</param>
-    /// <param name="window">Optional. The trending window: "day", "week" (the default), or "month",
-    /// the last of which is aggregated from the stored daily snapshots.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <response code="200">Trending shows returned.</response>
     /// <returns>The trending shows available locally, plus missing-title stubs.</returns>
@@ -165,7 +145,6 @@ public class DiscoverController : ControllerBase
         [FromQuery] string? fields,
         [FromQuery] int limit = 24,
         [FromQuery] string? source = null,
-        [FromQuery] string? window = null,
         CancellationToken cancellationToken = default)
     {
         var resolvedSource = ResolveSource(source);
@@ -174,15 +153,9 @@ public class DiscoverController : ControllerBase
             return Ok(new DiscoverRankedResult { Source = resolvedSource });
         }
 
-        if (IsMonthWindow(window))
-        {
-            return await BuildMonthResultAsync(resolvedSource, BaseItemKind.Series, userId, parentId, ParseFields(fields), limit, cancellationToken)
-                .ConfigureAwait(false);
-        }
-
         if (resolvedSource.Equals(DefaultSource, StringComparison.OrdinalIgnoreCase))
         {
-            var timeWindow = IsDayWindow(window) ? TimeWindow.Day : TimeWindow.Week;
+            var timeWindow = TimeWindow.Week;
             var titles = await _discoverClient
                 .GetTrendingSeriesTitlesAsync(timeWindow, TmdbDiscoverClient.PagesToScan, cancellationToken)
                 .ConfigureAwait(false);
@@ -701,87 +674,6 @@ public class DiscoverController : ControllerBase
     }
 
     /// <summary>
-    /// Builds the month trending result: the rolling snapshot-history aggregation for the source,
-    /// matched through the same name/year pipeline the snapshot lists use.
-    /// </summary>
-    /// <remarks>
-    /// History rows carry a movie/series flag, so the aggregation is narrowed to the requested
-    /// item kind. A source with no history yet (a fresh install) falls back to its latest snapshot
-    /// list, or to the TMDb week list.
-    /// </remarks>
-    private async Task<DiscoverRankedResult> BuildMonthResultAsync(
-        string source,
-        BaseItemKind itemKind,
-        Guid? userId,
-        Guid? parentId,
-        ItemFields[] fields,
-        int limit,
-        CancellationToken cancellationToken)
-    {
-        var isSeries = itemKind == BaseItemKind.Series;
-        var ranks = await _historyStore
-            .GetMonthRanksAsync(source, (int)SourceListKind.Trending, MonthDays, isSeries, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (ranks.Count == 0)
-        {
-            if (!source.Equals(DefaultSource, StringComparison.OrdinalIgnoreCase))
-            {
-                return BuildSnapshotRankedResult(source, SourceListKind.Trending, itemKind, userId, parentId, fields, limit);
-            }
-
-            var weekTitles = await GetTrendingTitlesAsync(itemKind, TimeWindow.Week, cancellationToken)
-                .ConfigureAwait(false);
-            var weekItems = weekTitles
-                .Select((title, index) => new SourceListItem
-                {
-                    Rank = index + 1,
-                    Title = title.Title ?? string.Empty,
-                    Year = title.Year,
-                    PosterUrl = MonthPosterUrl(source, title.Title ?? string.Empty, title.Year)
-                })
-                .ToList();
-            return BuildSnapshotRankedResultCore(source, weekItems, itemKind, userId, parentId, fields, limit);
-        }
-
-        var items = ranks
-            .Select((rank, index) => new SourceListItem
-            {
-                Rank = index + 1,
-                Title = rank.Title,
-                Year = rank.Year,
-                PosterUrl = MonthPosterUrl(source, rank.Title, rank.Year)
-            })
-            .ToList();
-        return BuildSnapshotRankedResultCore(source, items, itemKind, userId, parentId, fields, limit);
-    }
-
-    /// <summary>
-    /// Builds the lazy TMDb-search poster URL for a month window stub, mirroring the snapshot
-    /// fetcher's poster resolution: the search is hinted with "netflix" only for Netflix sources.
-    /// </summary>
-    private static string MonthPosterUrl(string source, string title, int? year)
-    {
-        var hint = source.StartsWith("netflix", StringComparison.Ordinal) ? " netflix" : string.Empty;
-        return PosterStore.EncodeProxyUrl(
-            PosterStore.SearchPrefix + title + hint + '\u001f' + (year?.ToString() ?? string.Empty));
-    }
-
-    /// <summary>
-    /// Fetches the TMDb trending titles for an item kind over a time window.
-    /// </summary>
-    private Task<IReadOnlyList<TmdbRankedTitle>> GetTrendingTitlesAsync(BaseItemKind itemKind, TimeWindow timeWindow, CancellationToken cancellationToken)
-    {
-        return itemKind == BaseItemKind.Series
-            ? _discoverClient.GetTrendingSeriesTitlesAsync(timeWindow, TmdbDiscoverClient.PagesToScan, cancellationToken)
-            : _discoverClient.GetTrendingMovieTitlesAsync(timeWindow, TmdbDiscoverClient.PagesToScan, cancellationToken);
-    }
-
-    private static bool IsDayWindow(string? window) => string.Equals(window, "day", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsMonthWindow(string? window) => string.Equals(window, "month", StringComparison.OrdinalIgnoreCase);
-
-    /// <summary>
     /// Builds the missing-title stubs for a snapshot source: stored titles that did not match a
     /// library item, under the global cap.
     /// </summary>
@@ -895,7 +787,7 @@ public class DiscoverController : ControllerBase
     /// <summary>
     /// Gets per-value item counts for a browse-mode picker, cached for 24 hours.
     /// </summary>
-    /// <param name="type">The picker: genre, rating, tag, decade, or studio.</param>
+    /// <param name="type">The picker: genre, rating, tag, decade, studio, or person.</param>
     /// <param name="parentId">Optional. Localize the count to a specific library.</param>
     /// <param name="itemTypes">Optional. Comma delimited item types; defaults to Movie and Series.</param>
     /// <param name="cancellationToken">The cancellation token.</param>

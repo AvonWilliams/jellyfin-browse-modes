@@ -31,12 +31,16 @@ public sealed class SnapshotListFetcher
             [("rottentomatoes", "toprated")] = "https://raw.githubusercontent.com/minakdr/Rotten-Tomatoes-Certified-Fresh-Movies-Dataset-September-2024-Edition-/main/MoviesRatingRottenTomato.csv",
             [("netflix", "trending")] = "https://raw.githubusercontent.com/dbready/netflix_top10/main/all-weeks-global.tsv",
             [("netflix-au", "trending")] = "https://raw.githubusercontent.com/dbready/netflix_top10/main/all-weeks-countries.tsv",
-            [("netflix-ph", "trending")] = "https://raw.githubusercontent.com/dbready/netflix_top10/main/all-weeks-countries.tsv"
+            [("netflix-ph", "trending")] = "https://raw.githubusercontent.com/dbready/netflix_top10/main/all-weeks-countries.tsv",
+            // Trakt's lists live behind its API (a client_id header this fetcher does not send), so
+            // these URLs are placeholders until a public snapshot mirror or a keyed fetch path
+            // exists. ParseTrakt handles Trakt's JSON list shape regardless of the final URL.
+            [("trakt", "trending")] = "https://PLACEHOLDER/trakt-trending.json",
+            [("trakt", "toprated")] = "https://PLACEHOLDER/trakt-popular.json"
         };
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly SourceListStore _store;
-    private readonly SourceListHistoryStore _historyStore;
     private readonly TmdbDiscoverClient _discoverClient;
     private readonly ILogger<SnapshotListFetcher> _logger;
 
@@ -48,19 +52,16 @@ public sealed class SnapshotListFetcher
     /// </summary>
     /// <param name="httpClientFactory">Instance of the <see cref="IHttpClientFactory"/> interface.</param>
     /// <param name="store">Instance of <see cref="SourceListStore"/>.</param>
-    /// <param name="historyStore">Instance of <see cref="SourceListHistoryStore"/>.</param>
     /// <param name="discoverClient">Instance of <see cref="TmdbDiscoverClient"/>, used for TMDb year lookups.</param>
     /// <param name="logger">Instance of the <see cref="ILogger{SnapshotListFetcher}"/> interface.</param>
     public SnapshotListFetcher(
         IHttpClientFactory httpClientFactory,
         SourceListStore store,
-        SourceListHistoryStore historyStore,
         TmdbDiscoverClient discoverClient,
         ILogger<SnapshotListFetcher> logger)
     {
         _httpClientFactory = httpClientFactory;
         _store = store;
-        _historyStore = historyStore;
         _discoverClient = discoverClient;
         _logger = logger;
     }
@@ -104,19 +105,6 @@ public sealed class SnapshotListFetcher
                 : $"{DisplayName(source.Key)} Top Rated";
 
             _store.ReplaceList(source.Key, kind, title, items);
-
-            try
-            {
-                await _historyStore
-                    .AppendSnapshotAsync(source.Key, (int)kind, items, DateTime.UtcNow, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                // Losing a history row only costs a future aggregation window, so it must not
-                // fail the refresh.
-                _logger.LogDebug(ex, "Unable to append history for {Source} ({Kind})", source.Key, source.Kind);
-            }
 
             _logger.LogInformation("Refreshed {Source} ({Kind}): {Count} titles", source.Key, source.Kind, items.Count);
         }
@@ -171,15 +159,16 @@ public sealed class SnapshotListFetcher
     }
 
     /// <summary>
-    /// Fills in missing years on Rotten Tomatoes and Netflix entries by searching each title on
-    /// TMDb. Both sources carry no year, and the year-aware library matching in the controller
-    /// only applies when one is present. Lookup failures are swallowed so a title that cannot be
-    /// enriched simply stays yearless.
+    /// Fills in missing years on Rotten Tomatoes, Netflix and Trakt entries by searching each
+    /// title on TMDb. Those sources carry no year (or an incomplete one), and the year-aware
+    /// library matching in the controller only applies when one is present. Lookup failures are
+    /// swallowed so a title that cannot be enriched simply stays yearless.
     /// </summary>
     private async Task EnrichYearsByTitleAsync(string sourceKey, IReadOnlyList<SourceListItem> items, CancellationToken cancellationToken)
     {
         if (!sourceKey.Equals("rottentomatoes", StringComparison.Ordinal)
-            && !sourceKey.StartsWith("netflix", StringComparison.Ordinal))
+            && !sourceKey.StartsWith("netflix", StringComparison.Ordinal)
+            && !sourceKey.Equals("trakt", StringComparison.Ordinal))
         {
             return;
         }
@@ -258,6 +247,7 @@ public sealed class SnapshotListFetcher
         "netflix-ph" => "Netflix Philippines",
         "letterboxd" => "Letterboxd",
         "rottentomatoes" => "Rotten Tomatoes",
+        "trakt" => "Trakt",
         _ => key
     };
 
@@ -281,6 +271,11 @@ public sealed class SnapshotListFetcher
         if (key.StartsWith("netflix", StringComparison.Ordinal))
         {
             return (ParseNetflix(key, body), Array.Empty<(int Index, string TtId)>());
+        }
+
+        if (key.Equals("trakt", StringComparison.Ordinal))
+        {
+            return (ParseTrakt(body), Array.Empty<(int Index, string TtId)>());
         }
 
         return (Array.Empty<SourceListItem>(), Array.Empty<(int Index, string TtId)>());
@@ -515,6 +510,75 @@ public sealed class SnapshotListFetcher
             .Select((u, index) => new SourceListItem { Rank = index + 1, Title = u.Title, Year = null, IsSeries = u.IsSeries })
             .Take(50)
             .ToList();
+    }
+
+    /// <summary>
+    /// Parses a Trakt ranked list. Trakt's own API nests each entry under a "movie" or "show"
+    /// object; a combined community export may instead be a flat array with a "type"/"media_type"
+    /// tag. Both shapes are handled, and the movie/series flag is carried through for the
+    /// controller's kind narrowing.
+    /// </summary>
+    private static IReadOnlyList<SourceListItem> ParseTrakt(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        var items = new List<SourceListItem>();
+        var position = 0;
+        foreach (var element in document.RootElement.EnumerateArray())
+        {
+            position++;
+
+            string? title;
+            int? year;
+            bool isSeries;
+
+            if (element.TryGetProperty("movie", out var movie) && movie.ValueKind == JsonValueKind.Object)
+            {
+                title = movie.TryGetProperty("title", out var movieTitle) ? movieTitle.GetString() : null;
+                year = movie.TryGetProperty("year", out var movieYear) && movieYear.TryGetInt32(out var my)
+                    ? my
+                    : (int?)null;
+                isSeries = false;
+            }
+            else if (element.TryGetProperty("show", out var show) && show.ValueKind == JsonValueKind.Object)
+            {
+                title = show.TryGetProperty("title", out var showTitle) ? showTitle.GetString() : null;
+                year = show.TryGetProperty("year", out var showYear) && showYear.TryGetInt32(out var sy)
+                    ? sy
+                    : (int?)null;
+                isSeries = true;
+            }
+            else
+            {
+                title = element.TryGetProperty("title", out var flatTitle) ? flatTitle.GetString() : null;
+                year = element.TryGetProperty("year", out var flatYear) && flatYear.TryGetInt32(out var fy)
+                    ? fy
+                    : (int?)null;
+                var typeHint = element.TryGetProperty("type", out var typeElement)
+                    ? typeElement.GetString()
+                    : element.TryGetProperty("media_type", out var mediaElement)
+                        ? mediaElement.GetString()
+                        : null;
+                isSeries = typeHint is not null
+                    && (typeHint.Equals("show", StringComparison.OrdinalIgnoreCase)
+                        || typeHint.Equals("tv", StringComparison.OrdinalIgnoreCase)
+                        || typeHint.Equals("series", StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (string.IsNullOrWhiteSpace(title))
+            {
+                continue;
+            }
+
+            items.Add(new SourceListItem
+            {
+                Rank = position,
+                Title = title.Trim(),
+                Year = year,
+                IsSeries = isSeries
+            });
+        }
+
+        return items;
     }
 
     private static IReadOnlyList<(string Title, bool IsSeries)> UnionAndRank(

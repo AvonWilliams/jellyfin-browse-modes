@@ -86,7 +86,9 @@ public class PluginConfiguration : BasePluginConfiguration
         new SourceListConfig { Key = "netflix-au", Kind = "trending" },
         new SourceListConfig { Key = "netflix-ph", Kind = "trending" },
         new SourceListConfig { Key = "letterboxd", Kind = "toprated" },
-        new SourceListConfig { Key = "rottentomatoes", Kind = "toprated" }
+        new SourceListConfig { Key = "rottentomatoes", Kind = "toprated" },
+        new SourceListConfig { Key = "trakt", Kind = "trending" },
+        new SourceListConfig { Key = "trakt", Kind = "toprated" }
     };
 
     /// <summary>
