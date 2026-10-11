@@ -40,13 +40,19 @@
             color: var(--jf-palette-text-secondary, inherit);
             font-weight: 600;
         }
-        /* JS-built native checkboxes: dashboard accent + focus ring. */
+        /* JS-built native checkboxes: keep them visible and clickable even if a
+           dashboard/global rule tries to hide native checkboxes, plus the
+           dashboard accent color and focus ring. */
         .tileEditorRow input[type=checkbox],
         .sourceRow input[type=checkbox] {
             accent-color: var(--jf-palette-primary-main, #00a4dc);
             width: 1.2em;
             height: 1.2em;
             margin: 0;
+            position: static;
+            opacity: 1;
+            appearance: auto;
+            pointer-events: auto;
         }
         .tileEditorRow input:focus-visible,
         .sourceRow input:focus-visible {
@@ -184,10 +190,12 @@
                 </div>
 
                 <div class="bmTabContent" data-tab="display" style="display:none">
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="ShowMissing">Show missing titles</label>
-                        <input id="ShowMissing" name="ShowMissing" type="checkbox" is="emby-checkbox" />
-                        <div class="fieldDescription">
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label>
+                            <input id="ShowMissing" name="ShowMissing" type="checkbox" is="emby-checkbox" />
+                            <span>Show missing titles</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">
                             Include titles from the ranked source that are not in your library, shown
                             as dimmed "Coming soon" tiles. This is the server default; users can still
                             hide them per view without changing it.
