@@ -9,6 +9,30 @@
         "imageUrl": "",
         "versions": [
             {
+                "version": "2.4.0",
+                "changelog": "Per-year and per-kind person counts on /Discover/Counts (type=year, type=person), coming-soon poster persistence, drop day/week/month window + snapshot history, fall back to premiere year when production year is 0.",
+                "targetAbi": "12.0.0.0",
+                "sourceUrl": "https://github.com/AvonWilliams/jellyfin-browse-modes/releases/download/v2.4.0/browse-modes_2.4.0_12.0.0.zip",
+                "checksum": "19d3a8594e335b712e5a5e0bdfb96819",
+                "timestamp": "2026-10-11T11:35:12Z"
+            },
+            {
+                "version": "2.4.0",
+                "changelog": "Per-year and per-kind person counts on /Discover/Counts (type=year, type=person), coming-soon poster persistence, drop day/week/month window + snapshot history, fall back to premiere year when production year is 0.",
+                "targetAbi": "12.1.0.0",
+                "sourceUrl": "https://github.com/AvonWilliams/jellyfin-browse-modes/releases/download/v2.4.0/browse-modes_2.4.0_12.1.0.zip",
+                "checksum": "eeae99cc470e1c2569c9224de2a32c04",
+                "timestamp": "2026-10-11T11:35:12Z"
+            },
+            {
+                "version": "2.4.0",
+                "changelog": "Per-year and per-kind person counts on /Discover/Counts (type=year, type=person), coming-soon poster persistence, drop day/week/month window + snapshot history, fall back to premiere year when production year is 0.",
+                "targetAbi": "12.2.0.0",
+                "sourceUrl": "https://github.com/AvonWilliams/jellyfin-browse-modes/releases/download/v2.4.0/browse-modes_2.4.0_12.2.0.zip",
+                "checksum": "80ac26bffa05c13db19955ad8d8b8cf6",
+                "timestamp": "2026-10-11T11:35:12Z"
+            },
+            {
                 "version": "2.3.1.0",
                 "changelog": "Settings page fixes: tab class collision with dashboard CSS (tabs now render and the Show missing titles checkbox saves), spacing, and source Kind round-trip on save.",
                 "targetAbi": "12.0.0.0",
