@@ -9,6 +9,30 @@
         "imageUrl": "",
         "versions": [
             {
+                "version": "2.4.2",
+                "changelog": "Person counts now include episode/season credits; tile editor lists the four thematic groups (Categories/Mood & Themes/People/Discover).",
+                "targetAbi": "12.2.0.0",
+                "sourceUrl": "https://github.com/AvonWilliams/jellyfin-browse-modes/releases/download/v2.4.2/browse-modes_2.4.2_12.2.0.zip",
+                "checksum": "198921367ec77890c844abee6b1da80c",
+                "timestamp": "2026-10-11T13:38:10Z"
+            },
+            {
+                "version": "2.4.2",
+                "changelog": "Person counts now include episode/season credits; tile editor lists the four thematic groups (Categories/Mood & Themes/People/Discover).",
+                "targetAbi": "12.1.0.0",
+                "sourceUrl": "https://github.com/AvonWilliams/jellyfin-browse-modes/releases/download/v2.4.2/browse-modes_2.4.2_12.1.0.zip",
+                "checksum": "99c7f992df2937cd7a6b3242eb4a1b5b",
+                "timestamp": "2026-10-11T13:38:10Z"
+            },
+            {
+                "version": "2.4.2",
+                "changelog": "Person counts now include episode/season credits; tile editor lists the four thematic groups (Categories/Mood & Themes/People/Discover).",
+                "targetAbi": "12.0.0.0",
+                "sourceUrl": "https://github.com/AvonWilliams/jellyfin-browse-modes/releases/download/v2.4.2/browse-modes_2.4.2_12.0.0.zip",
+                "checksum": "7f07306c8edf839905cc581881977b9f",
+                "timestamp": "2026-10-11T13:38:10Z"
+            },
+            {
                 "version": "2.4.1",
                 "changelog": "Settings page boxed sections + clickable Show-missing checkbox; per-person item counts (type=personitems); ranked-list cache keyed on ShowMissing/MaxMissing.",
                 "targetAbi": "12.2.0.0",
