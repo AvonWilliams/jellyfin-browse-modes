@@ -507,7 +507,7 @@ public sealed class TmdbDiscoverClient : IDisposable
             var yearCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             foreach (var item in items)
             {
-                var year = item.ProductionYear ?? item.PremiereDate?.Year;
+                var year = item.ProductionYear > 0 ? item.ProductionYear : item.PremiereDate?.Year;
                 if (year.HasValue)
                 {
                     Increment(yearCounts, year.Value.ToString(CultureInfo.InvariantCulture));
@@ -550,7 +550,7 @@ public sealed class TmdbDiscoverClient : IDisposable
                     break;
 
                 case "decade":
-                    var year = item.ProductionYear ?? item.PremiereDate?.Year;
+                    var year = item.ProductionYear > 0 ? item.ProductionYear : item.PremiereDate?.Year;
                     if (year.HasValue)
                     {
                         Increment(counts, ((year.Value / 10) * 10).ToString(CultureInfo.InvariantCulture) + "s");
