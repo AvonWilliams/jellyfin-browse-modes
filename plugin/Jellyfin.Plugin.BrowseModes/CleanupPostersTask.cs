@@ -27,7 +27,7 @@ public class CleanupPostersTask : IScheduledTask
     }
 
     /// <inheritdoc />
-    public string Name => "Clean up cached source posters";
+    public string Name => "BM: Clean up cached source posters";
 
     /// <inheritdoc />
     public string Description => "Deletes cached poster images that have not been served for two months.";

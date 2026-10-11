@@ -34,7 +34,7 @@ public class RefreshDiscoverListsTask : IScheduledTask
     }
 
     /// <inheritdoc />
-    public string Name => "Refresh TMDb discover lists";
+    public string Name => "BM: Refresh TMDb discover lists";
 
     /// <inheritdoc />
     public string Description => "Caches the TMDb trending and top rated lists so library browse modes load instantly.";

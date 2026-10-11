@@ -41,7 +41,7 @@ public class RefreshStudioCountsTask : IScheduledTask
     }
 
     /// <inheritdoc />
-    public string Name => "Refresh studio item counts";
+    public string Name => "BM: Refresh studio item counts";
 
     /// <inheritdoc />
     public string Description => "Caches how many titles each studio has so the Studios browse mode loads instantly.";

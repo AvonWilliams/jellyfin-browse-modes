@@ -43,7 +43,7 @@ public class RefreshBrowseModeCountsTask : IScheduledTask
     }
 
     /// <inheritdoc />
-    public string Name => "Refresh browse mode counts";
+    public string Name => "BM: Refresh browse mode counts";
 
     /// <inheritdoc />
     public string Description => "Pre-computes picker item counts (genre, rating, tag, decade, year, studio, person) for every library.";

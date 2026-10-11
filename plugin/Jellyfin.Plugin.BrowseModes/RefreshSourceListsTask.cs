@@ -31,7 +31,7 @@ public class RefreshSourceListsTask : IScheduledTask
     }
 
     /// <inheritdoc />
-    public string Name => "Refresh snapshot source lists";
+    public string Name => "BM: Refresh snapshot source lists";
 
     /// <inheritdoc />
     public string Description => "Downloads the IMDb, Netflix, Letterboxd and Rotten Tomatoes ranked lists and stores them locally.";
