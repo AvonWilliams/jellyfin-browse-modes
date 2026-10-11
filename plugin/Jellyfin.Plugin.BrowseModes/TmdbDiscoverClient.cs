@@ -683,7 +683,13 @@ public sealed class TmdbDiscoverClient : IDisposable
         int pages,
         bool force = false)
     {
-        if (!force && _memoryCache.TryGetValue(cacheKey, out IReadOnlyList<TmdbRankedTitle>? cachedTitles) && cachedTitles is not null)
+        // "Show missing titles" and the missing cap shape the ranked response, so they belong in
+        // the key: toggling either must not hand back a list cached under the previous setting.
+        var showMissing = Plugin.Instance?.Configuration.ShowMissing ?? true;
+        var maxMissing = Math.Max(0, Plugin.Instance?.Configuration.MaxMissing ?? 10);
+        var listCacheKey = $"{cacheKey}-missing-{(showMissing ? 1 : 0)}-{maxMissing.ToString(CultureInfo.InvariantCulture)}";
+
+        if (!force && _memoryCache.TryGetValue(listCacheKey, out IReadOnlyList<TmdbRankedTitle>? cachedTitles) && cachedTitles is not null)
         {
             return cachedTitles;
         }
@@ -725,7 +731,7 @@ public sealed class TmdbDiscoverClient : IDisposable
 
         if (titles.Count > 0)
         {
-            _memoryCache.Set(cacheKey, (IReadOnlyList<TmdbRankedTitle>)titles, TimeSpan.FromHours(CacheDurationHours));
+            _memoryCache.Set(listCacheKey, (IReadOnlyList<TmdbRankedTitle>)titles, TimeSpan.FromHours(CacheDurationHours));
         }
 
         return titles;
