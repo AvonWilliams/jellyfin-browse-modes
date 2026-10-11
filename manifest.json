@@ -9,6 +9,30 @@
         "imageUrl": "",
         "versions": [
             {
+                "version": "2.4.1",
+                "changelog": "Settings page boxed sections + clickable Show-missing checkbox; per-person item counts (type=personitems); ranked-list cache keyed on ShowMissing/MaxMissing.",
+                "targetAbi": "12.2.0.0",
+                "sourceUrl": "https://github.com/AvonWilliams/jellyfin-browse-modes/releases/download/v2.4.1/browse-modes_2.4.1_12.2.0.zip",
+                "checksum": "b5ac72879917689de57d642e6c7e0f0c",
+                "timestamp": "2026-10-11T12:30:38Z"
+            },
+            {
+                "version": "2.4.1",
+                "changelog": "Settings page boxed sections + clickable Show-missing checkbox; per-person item counts (type=personitems); ranked-list cache keyed on ShowMissing/MaxMissing.",
+                "targetAbi": "12.1.0.0",
+                "sourceUrl": "https://github.com/AvonWilliams/jellyfin-browse-modes/releases/download/v2.4.1/browse-modes_2.4.1_12.1.0.zip",
+                "checksum": "114f67e5d5e07637f79b707d4080f4dd",
+                "timestamp": "2026-10-11T12:30:38Z"
+            },
+            {
+                "version": "2.4.1",
+                "changelog": "Settings page boxed sections + clickable Show-missing checkbox; per-person item counts (type=personitems); ranked-list cache keyed on ShowMissing/MaxMissing.",
+                "targetAbi": "12.0.0.0",
+                "sourceUrl": "https://github.com/AvonWilliams/jellyfin-browse-modes/releases/download/v2.4.1/browse-modes_2.4.1_12.0.0.zip",
+                "checksum": "1833078135f820c9632ac7fdaa2e11f0",
+                "timestamp": "2026-10-11T12:30:38Z"
+            },
+            {
                 "version": "2.4.0",
                 "changelog": "Per-year and per-kind person counts on /Discover/Counts (type=year, type=person), coming-soon poster persistence, drop day/week/month window + snapshot history, fall back to premiere year when production year is 0.",
                 "targetAbi": "12.0.0.0",
