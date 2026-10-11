@@ -472,10 +472,13 @@ public sealed class TmdbDiscoverClient : IDisposable
     /// Decades are keyed by their start year as a bare integer string (e.g. "1980"), matching
     /// the client's filter values. Shared by the controller and the pre-bake scheduled task.
     /// </remarks>
-    public Dictionary<string, int> GetOrBuildCounts(string type, Guid? parentId, BaseItemKind[] itemTypes, ILibraryManager libraryManager)
+    public Dictionary<string, int> GetOrBuildCounts(string type, Guid? parentId, BaseItemKind[] itemTypes, ILibraryManager libraryManager, PersonKind[]? personTypes = null)
     {
         var scopeId = parentId.HasValue && !parentId.Value.IsEmpty() ? parentId.Value : Guid.Empty;
-        var cacheKey = $"{type}:{scopeId}:{string.Join(',', itemTypes)}";
+        var personScope = type.Equals("personitems", StringComparison.OrdinalIgnoreCase)
+            ? $":{string.Join(',', personTypes ?? [PersonKind.Actor, PersonKind.Director, PersonKind.Writer])}"
+            : string.Empty;
+        var cacheKey = $"{type}:{scopeId}:{string.Join(',', itemTypes)}{personScope}";
         var cached = GetCounts(cacheKey);
         if (cached is not null)
         {
@@ -500,6 +503,13 @@ public sealed class TmdbDiscoverClient : IDisposable
             var personCounts = BuildPersonCounts(items, libraryManager);
             SetCounts(cacheKey, personCounts);
             return personCounts;
+        }
+
+        if (type.Equals("personitems", StringComparison.OrdinalIgnoreCase))
+        {
+            var personItemCounts = BuildPersonItemCounts(items, libraryManager, personTypes ?? [PersonKind.Actor, PersonKind.Director, PersonKind.Writer]);
+            SetCounts(cacheKey, personItemCounts);
+            return personItemCounts;
         }
 
         if (type.Equals("year", StringComparison.OrdinalIgnoreCase))
@@ -606,6 +616,39 @@ public sealed class TmdbDiscoverClient : IDisposable
         foreach (var (kind, kindNames) in names)
         {
             counts[kind.ToString()] = kindNames.Count;
+        }
+
+        return counts;
+    }
+
+    /// <summary>
+    /// Counts how many items each person appears in, keyed by person name. Only the given person
+    /// kinds are counted, and a person listed under several kinds within one item is counted once
+    /// for that item.
+    /// </summary>
+    private static Dictionary<string, int> BuildPersonItemCounts(IReadOnlyList<BaseItem> items, ILibraryManager libraryManager, PersonKind[] personKinds)
+    {
+        var kinds = new HashSet<PersonKind>(personKinds);
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        var peopleByItem = libraryManager.GetPeopleByItems(items.Select(item => item.Id).ToList());
+        foreach (var people in peopleByItem.Values)
+        {
+            // An item can list the same person under several kinds (actor and director), but the
+            // item should only count once per person.
+            var counted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var person in people)
+            {
+                if (string.IsNullOrWhiteSpace(person.Name) || !kinds.Contains(person.Type))
+                {
+                    continue;
+                }
+
+                if (counted.Add(person.Name))
+                {
+                    Increment(counts, person.Name);
+                }
+            }
         }
 
         return counts;

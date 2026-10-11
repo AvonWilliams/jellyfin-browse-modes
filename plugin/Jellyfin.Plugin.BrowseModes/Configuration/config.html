@@ -90,6 +90,25 @@
             color: #fff;
             border-color: var(--jf-palette-primary-main, #00a4dc);
         }
+        /* Boxed section panels: light bordered panel with a heading divider. */
+        .bmSection {
+            border: 1px solid rgba(128, 128, 128, 0.4);
+            border-radius: 8px;
+            padding: 1em 1.2em;
+            margin-bottom: 1.4em;
+            background: rgba(128, 128, 128, 0.06);
+        }
+        .bmSectionTitle {
+            font-weight: 600;
+            font-size: 1.15em;
+            margin: 0 0 0.7em;
+            padding-bottom: 0.5em;
+            border-bottom: 1px solid rgba(128, 128, 128, 0.4);
+        }
+        .bmSection > .inputContainer:last-child,
+        .bmSection > .checkboxContainer:last-child {
+            margin-bottom: 0;
+        }
     </style>
 </head>
 <body>
@@ -128,58 +147,62 @@
 
             <form id="BrowseModesConfigForm">
                 <div class="bmTabContent" data-tab="tmdb">
-                    <div class="inputLabel inputLabelUnfocused">TMDb API</div>
+                    <div class="bmSection">
+                        <div class="bmSectionTitle">TMDb API</div>
 
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="TmdbApiKey">TMDb API key</label>
-                        <input id="TmdbApiKey" name="TmdbApiKey" type="text" is="emby-input" />
-                        <div class="fieldDescription">
-                            Required for the Trending and Top Rated browse modes. Keys are free from
-                            themoviedb.org. Every other browse mode works without one.
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="TmdbApiKey">TMDb API key</label>
+                            <input id="TmdbApiKey" name="TmdbApiKey" type="text" is="emby-input" />
+                            <div class="fieldDescription">
+                                Required for the Trending and Top Rated browse modes. Keys are free from
+                                themoviedb.org. Every other browse mode works without one.
+                            </div>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="DiscoverPagesToScan">Pages to scan</label>
+                            <input id="DiscoverPagesToScan" name="DiscoverPagesToScan" type="number" min="1" max="50" step="1" is="emby-input" />
+                            <div class="fieldDescription">
+                                TMDb returns 20 titles per page and most will not be in your library, so a
+                                wide net is cast. Raising this finds more matches but makes more requests.
+                            </div>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="CacheDurationHours">Cache duration (hours)</label>
+                            <input id="CacheDurationHours" name="CacheDurationHours" type="number" min="1" max="168" step="1" is="emby-input" />
+                            <div class="fieldDescription">
+                                How long a built list is kept before it is fetched again.
+                            </div>
                         </div>
                     </div>
 
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="DiscoverPagesToScan">Pages to scan</label>
-                        <input id="DiscoverPagesToScan" name="DiscoverPagesToScan" type="number" min="1" max="50" step="1" is="emby-input" />
-                        <div class="fieldDescription">
-                            TMDb returns 20 titles per page and most will not be in your library, so a
-                            wide net is cast. Raising this finds more matches but makes more requests.
+                    <div class="bmSection">
+                        <div class="bmSectionTitle">Rank limits</div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="TrendingMaxRank">Trending rank limit</label>
+                            <input id="TrendingMaxRank" name="TrendingMaxRank" type="number" min="0" max="1000" step="1" is="emby-input" />
+                            <div class="fieldDescription">
+                                Only show titles in the top N positions of TMDb's trending list. Position is
+                                1-based: 50 keeps ranks 1–50 and drops anything lower. Leave 0 for no limit.
+                            </div>
                         </div>
-                    </div>
 
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="CacheDurationHours">Cache duration (hours)</label>
-                        <input id="CacheDurationHours" name="CacheDurationHours" type="number" min="1" max="168" step="1" is="emby-input" />
-                        <div class="fieldDescription">
-                            How long a built list is kept before it is fetched again.
-                        </div>
-                    </div>
-
-                    <div class="inputLabel inputLabelUnfocused" style="margin-top: 1.4em;">Rank limits</div>
-
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="TrendingMaxRank">Trending rank limit</label>
-                        <input id="TrendingMaxRank" name="TrendingMaxRank" type="number" min="0" max="1000" step="1" is="emby-input" />
-                        <div class="fieldDescription">
-                            Only show titles in the top N positions of TMDb's trending list. Position is
-                            1-based: 50 keeps ranks 1–50 and drops anything lower. Leave 0 for no limit.
-                        </div>
-                    </div>
-
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="TopRatedMaxRank">Top Rated rank limit</label>
-                        <input id="TopRatedMaxRank" name="TopRatedMaxRank" type="number" min="0" max="1000" step="1" is="emby-input" />
-                        <div class="fieldDescription">
-                            Only show titles in the top N positions of TMDb's top rated list. Leave 0
-                            for no limit.
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="TopRatedMaxRank">Top Rated rank limit</label>
+                            <input id="TopRatedMaxRank" name="TopRatedMaxRank" type="number" min="0" max="1000" step="1" is="emby-input" />
+                            <div class="fieldDescription">
+                                Only show titles in the top N positions of TMDb's top rated list. Leave 0
+                                for no limit.
+                            </div>
                         </div>
                     </div>
                 </div>
 
                 <div class="bmTabContent" data-tab="sources" style="display:none">
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused">Snapshot sources</label>
+                    <div class="bmSection">
+                        <div class="bmSectionTitle">Snapshot sources</div>
                         <div class="fieldDescription">
                             Ranked lists from IMDb, Netflix, Letterboxd and Rotten Tomatoes, refreshed
                             daily. Leave a URL empty to use the built-in default. Scraping is a
@@ -190,29 +213,32 @@
                 </div>
 
                 <div class="bmTabContent" data-tab="display" style="display:none">
-                    <div class="checkboxContainer checkboxContainer-withDescription">
-                        <label>
-                            <input id="ShowMissing" name="ShowMissing" type="checkbox" is="emby-checkbox" />
-                            <span>Show missing titles</span>
-                        </label>
-                        <div class="fieldDescription checkboxFieldDescription">
-                            Include titles from the ranked source that are not in your library, shown
-                            as dimmed "Coming soon" tiles. This is the server default; users can still
-                            hide them per view without changing it.
+                    <div class="bmSection">
+                        <div class="bmSectionTitle">Display options</div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input id="ShowMissing" name="ShowMissing" type="checkbox" is="emby-checkbox" />
+                                <span>Show missing titles</span>
+                            </label>
+                            <div class="fieldDescription checkboxFieldDescription">
+                                Include titles from the ranked source that are not in your library, shown
+                                as dimmed "Coming soon" tiles. This is the server default; users can still
+                                hide them per view without changing it.
+                            </div>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="MaxMissing">Max missing titles</label>
+                            <input id="MaxMissing" name="MaxMissing" type="number" min="0" max="100" step="1" is="emby-input" />
+                            <div class="fieldDescription">
+                                The most missing titles to show per ranked view, across all sources. 0
+                                disables them.
+                            </div>
                         </div>
                     </div>
 
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="MaxMissing">Max missing titles</label>
-                        <input id="MaxMissing" name="MaxMissing" type="number" min="0" max="100" step="1" is="emby-input" />
-                        <div class="fieldDescription">
-                            The most missing titles to show per ranked view, across all sources. 0
-                            disables them.
-                        </div>
-                    </div>
-
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused">Browse mode tiles</label>
+                    <div class="bmSection">
+                        <div class="bmSectionTitle">Browse mode tiles</div>
                         <div class="fieldDescription">
                             Reorder the tiles with the arrows and uncheck any you want hidden. The web
                             client applies this order. All is your original list.

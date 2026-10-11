@@ -787,9 +787,10 @@ public class DiscoverController : ControllerBase
     /// <summary>
     /// Gets per-value item counts for a browse-mode picker, cached for 24 hours.
     /// </summary>
-    /// <param name="type">The picker: genre, rating, tag, decade, year, studio, or person.</param>
+    /// <param name="type">The picker: genre, rating, tag, decade, year, studio, person, or personitems.</param>
     /// <param name="parentId">Optional. Localize the count to a specific library.</param>
     /// <param name="itemTypes">Optional. Comma delimited item types; defaults to Movie and Series.</param>
+    /// <param name="personTypes">Optional. Comma delimited person kinds for personitems; defaults to Actor, Director and Writer.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <response code="200">A map of value to item count.</response>
     /// <returns>Per-value item counts.</returns>
@@ -799,10 +800,12 @@ public class DiscoverController : ControllerBase
         [FromQuery] string type,
         [FromQuery] Guid? parentId,
         [FromQuery] string? itemTypes,
+        [FromQuery] string? personTypes,
         CancellationToken cancellationToken = default)
     {
         var kinds = ParseItemKinds(itemTypes);
-        return Ok(_discoverClient.GetOrBuildCounts(type, parentId, kinds, _libraryManager));
+        var personKinds = ParsePersonKinds(personTypes);
+        return Ok(_discoverClient.GetOrBuildCounts(type, parentId, kinds, _libraryManager, personKinds));
     }
 
     /// <summary>
@@ -910,6 +913,28 @@ public class DiscoverController : ControllerBase
         foreach (var value in itemTypes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             if (Enum.TryParse<BaseItemKind>(value, true, out var kind))
+            {
+                kinds.Add(kind);
+            }
+        }
+
+        return kinds.ToArray();
+    }
+
+    /// <summary>
+    /// Parses the comma delimited personTypes query parameter, defaulting to Actor, Director and Writer.
+    /// </summary>
+    private static PersonKind[] ParsePersonKinds(string? personTypes)
+    {
+        if (string.IsNullOrWhiteSpace(personTypes))
+        {
+            return [PersonKind.Actor, PersonKind.Director, PersonKind.Writer];
+        }
+
+        var kinds = new List<PersonKind>();
+        foreach (var value in personTypes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (Enum.TryParse<PersonKind>(value, true, out var kind))
             {
                 kinds.Add(kind);
             }
