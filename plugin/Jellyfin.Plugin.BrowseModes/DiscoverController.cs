@@ -787,7 +787,7 @@ public class DiscoverController : ControllerBase
     /// <summary>
     /// Gets per-value item counts for a browse-mode picker, cached for 24 hours.
     /// </summary>
-    /// <param name="type">The picker: genre, rating, tag, decade, studio, or person.</param>
+    /// <param name="type">The picker: genre, rating, tag, decade, year, studio, or person.</param>
     /// <param name="parentId">Optional. Localize the count to a specific library.</param>
     /// <param name="itemTypes">Optional. Comma delimited item types; defaults to Movie and Series.</param>
     /// <param name="cancellationToken">The cancellation token.</param>

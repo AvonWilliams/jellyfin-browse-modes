@@ -502,6 +502,22 @@ public sealed class TmdbDiscoverClient : IDisposable
             return personCounts;
         }
 
+        if (type.Equals("year", StringComparison.OrdinalIgnoreCase))
+        {
+            var yearCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var item in items)
+            {
+                var year = item.ProductionYear ?? item.PremiereDate?.Year;
+                if (year.HasValue)
+                {
+                    Increment(yearCounts, year.Value.ToString(CultureInfo.InvariantCulture));
+                }
+            }
+
+            SetCounts(cacheKey, yearCounts);
+            return yearCounts;
+        }
+
         var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in items)
         {
