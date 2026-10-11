@@ -500,14 +500,14 @@ public sealed class TmdbDiscoverClient : IDisposable
 
         if (type.Equals("person", StringComparison.OrdinalIgnoreCase))
         {
-            var personCounts = BuildPersonCounts(items, libraryManager);
+            var personCounts = BuildPersonCounts(items, parentId, libraryManager);
             SetCounts(cacheKey, personCounts);
             return personCounts;
         }
 
         if (type.Equals("personitems", StringComparison.OrdinalIgnoreCase))
         {
-            var personItemCounts = BuildPersonItemCounts(items, libraryManager, personTypes ?? [PersonKind.Actor, PersonKind.Director, PersonKind.Writer]);
+            var personItemCounts = BuildPersonItemCounts(items, parentId, libraryManager, personTypes ?? [PersonKind.Actor, PersonKind.Director, PersonKind.Writer]);
             SetCounts(cacheKey, personItemCounts);
             return personItemCounts;
         }
@@ -587,9 +587,9 @@ public sealed class TmdbDiscoverClient : IDisposable
 
     /// <summary>
     /// Counts the distinct persons of the Actor, Director and Writer kinds across the given
-    /// items, keyed by the person kind name.
+    /// items and their child items, keyed by the person kind name.
     /// </summary>
-    private static Dictionary<string, int> BuildPersonCounts(IReadOnlyList<BaseItem> items, ILibraryManager libraryManager)
+    private static Dictionary<string, int> BuildPersonCounts(IReadOnlyList<BaseItem> items, Guid? parentId, ILibraryManager libraryManager)
     {
         var names = new Dictionary<PersonKind, HashSet<string>>
         {
@@ -598,7 +598,7 @@ public sealed class TmdbDiscoverClient : IDisposable
             [PersonKind.Writer] = new(StringComparer.OrdinalIgnoreCase)
         };
 
-        var peopleByItem = libraryManager.GetPeopleByItems(items.Select(item => item.Id).ToList());
+        var peopleByItem = GetPeopleAcrossItems(items, parentId, libraryManager);
         foreach (var people in peopleByItem.Values)
         {
             foreach (var person in people)
@@ -622,36 +622,119 @@ public sealed class TmdbDiscoverClient : IDisposable
     }
 
     /// <summary>
-    /// Counts how many items each person appears in, keyed by person name. Only the given person
-    /// kinds are counted, and a person listed under several kinds within one item is counted once
-    /// for that item.
+    /// Counts how many items each person appears in, keyed by person name. A person belongs to the
+    /// picker when they hold at least one credit of the given kinds, but their count is the number
+    /// of items they appear in under any kind, matching the person detail's "appears in N items".
     /// </summary>
-    private static Dictionary<string, int> BuildPersonItemCounts(IReadOnlyList<BaseItem> items, ILibraryManager libraryManager, PersonKind[] personKinds)
+    private static Dictionary<string, int> BuildPersonItemCounts(IReadOnlyList<BaseItem> items, Guid? parentId, ILibraryManager libraryManager, PersonKind[] personKinds)
     {
         var kinds = new HashSet<PersonKind>(personKinds);
-        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var eligibleNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var appearancesByName = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
-        var peopleByItem = libraryManager.GetPeopleByItems(items.Select(item => item.Id).ToList());
+        var peopleByItem = GetPeopleAcrossItems(items, parentId, libraryManager);
         foreach (var people in peopleByItem.Values)
         {
-            // An item can list the same person under several kinds (actor and director), but the
-            // item should only count once per person.
+            // An item can list the same person under several kinds (actor and director) and on
+            // several child items (episodes); the item should only count once per person.
             var counted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var person in people)
             {
-                if (string.IsNullOrWhiteSpace(person.Name) || !kinds.Contains(person.Type))
+                if (string.IsNullOrWhiteSpace(person.Name))
                 {
                     continue;
                 }
 
+                if (kinds.Contains(person.Type))
+                {
+                    eligibleNames.Add(person.Name);
+                }
+
                 if (counted.Add(person.Name))
                 {
-                    Increment(counts, person.Name);
+                    Increment(appearancesByName, person.Name);
                 }
             }
         }
 
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var name in eligibleNames)
+        {
+            counts[name] = appearancesByName[name];
+        }
+
         return counts;
+    }
+
+    /// <summary>
+    /// Gets the people credited on the given top-level items and their child items (seasons and
+    /// episodes), keyed by the top-level item each credit belongs to.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="ILibraryManager.GetPeopleByItems"/> returns only the people attached directly to
+    /// the queried items. TV show people are usually attached to the episodes, so querying only the
+    /// series misses them; the child items are fetched here and their people attributed to the
+    /// parent series.
+    /// </remarks>
+    private static Dictionary<Guid, IReadOnlyList<PersonInfo>> GetPeopleAcrossItems(
+        IReadOnlyList<BaseItem> items,
+        Guid? parentId,
+        ILibraryManager libraryManager)
+    {
+        var childQuery = new InternalItemsQuery
+        {
+            IncludeItemTypes = [BaseItemKind.Season, BaseItemKind.Episode],
+            Recursive = true
+        };
+
+        if (parentId.HasValue && !parentId.Value.IsEmpty())
+        {
+            childQuery.ParentId = parentId.Value;
+        }
+
+        var children = libraryManager.GetItemList(childQuery);
+
+        // Map every item id to the top-level item (series or movie) it rolls up into.
+        var topLevelByItemId = new Dictionary<Guid, Guid>();
+        var allIds = new List<Guid>(items.Count + children.Count);
+        foreach (var item in items)
+        {
+            topLevelByItemId[item.Id] = item.Id;
+            allIds.Add(item.Id);
+        }
+
+        foreach (var child in children)
+        {
+            var topLevelId = child switch
+            {
+                IHasSeries seriesItem when !seriesItem.SeriesId.IsEmpty() => seriesItem.SeriesId,
+                _ when !child.ParentId.IsEmpty() => child.ParentId,
+                _ => child.Id
+            };
+
+            topLevelByItemId[child.Id] = topLevelId;
+            allIds.Add(child.Id);
+        }
+
+        // Re-key the per-item people by their top-level item so episode and season credits count
+        // toward their series.
+        var peopleByTopLevelItem = new Dictionary<Guid, List<PersonInfo>>();
+        var peopleByItem = libraryManager.GetPeopleByItems(allIds);
+        foreach (var (itemId, people) in peopleByItem)
+        {
+            var topLevelId = topLevelByItemId.TryGetValue(itemId, out var mapped) ? mapped : itemId;
+            if (!peopleByTopLevelItem.TryGetValue(topLevelId, out var bucket))
+            {
+                bucket = new List<PersonInfo>();
+                peopleByTopLevelItem[topLevelId] = bucket;
+            }
+
+            bucket.AddRange(people);
+        }
+
+        return peopleByTopLevelItem.ToDictionary(
+            kvp => kvp.Key,
+            kvp => (IReadOnlyList<PersonInfo>)kvp.Value);
     }
 
     private static void Increment(Dictionary<string, int> counts, string? value)
