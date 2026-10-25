@@ -3,8 +3,8 @@
     "releases": {
         "12.3": {
             "plugin": "12.3.1",
-            "web": "12.3.1",
-            "webSha256": "8fb542e5d041556f5cc0b03c3cccb7fdb305f3d5784304081f8cf24b66a4788a"
+            "web": "12.3.2",
+            "webSha256": "f4b56c2f8ab3b461cdd0751127efb92be9dbef60f9e3ceef6bbc843cd7c76998"
         },
         "12.2": {
             "plugin": "2.4.2",

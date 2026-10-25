@@ -3,6 +3,16 @@
 Versions cover the project as a whole — plugin, web client and Android TV client are released
 together under one number, even when only one of them changed. Each entry says which parts moved.
 
+## 12.3.2 — Glass heading tiles and a softer backdrop
+
+**Web client** only. Plugin and Android TV are unchanged.
+
+- The library title and the Browse home group headings (Categories, Mood & Themes, People,
+  Discover) now sit on the same dark glass tile as the browse tiles. The tiles overhang into the
+  surrounding gaps, so the home page keeps its one-screen height.
+- The frosted library backdrop is blurred harder and the frost now covers the middle of the
+  screen, not only the edges, so it reads as glass over the artwork instead of a sharp image.
+
 ## 12.3.1 — Fast People lists and fixed tile order
 
 **Plugin** and **web client**. Android TV is unchanged for now (its change is specified in
