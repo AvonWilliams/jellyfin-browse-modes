@@ -3,7 +3,7 @@
 Versions cover the project as a whole — plugin, web client and Android TV client are released
 together under one number, even when only one of them changed. Each entry says which parts moved.
 
-## 12.3.2 — Fast People lists
+## 12.3.1 — Fast People lists and fixed tile order
 
 **Plugin** and **web client**. Android TV is unchanged for now (its change is specified in
 `ATV-PEOPLE-INDEX.md` next to this repository).
@@ -22,17 +22,12 @@ together under one number, even when only one of them changed. Each entry says w
   and if the database cannot be read.
 - `/Discover/Counts` is unchanged for other clients; its person counts are now filled from the
   index instead of scanning the library once per person kind.
-- Compatibility: the new web client falls back to the previous per-person requests on a 12.3.1 or
+- Compatibility: the new web client falls back to the previous per-person requests on a 12.3.0 or
   older plugin, and the older web client keeps working against the new plugin. The new tables are
   added to `browse-modes.db` by a versioned migration; existing data is untouched and the index can
   be deleted at any time.
 - A credit with no person item in the library (not yet created) is left out of the People lists,
   as the server's own person list does.
-
-## 12.3.1 — Fixed tile order
-
-**Plugin** and **web client**.
-
 - Browse Modes tiles are no longer configurable. Every category is always shown, in one fixed
   order (Categories, Mood & Themes, People, Discover after the primary tiles). The "Browse mode
   tiles" section is removed from the plugin's Display settings page.

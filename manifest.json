@@ -9,6 +9,14 @@
         "imageUrl": "",
         "versions": [
             {
+                "version": "12.3.1",
+                "changelog": "Fast People lists (people index and /Discover/People), fixed tile order, Sources list fixes.",
+                "targetAbi": "12.3.0.0",
+                "sourceUrl": "https://github.com/AvonWilliams/jellyfin-browse-modes/releases/download/v12.3.1/browse-modes_12.3.1_12.3.0.zip",
+                "checksum": "PENDING-CI",
+                "timestamp": "PENDING-CI"
+            },
+            {
                 "version": "12.3.0",
                 "changelog": "Jellyfin 12.3 support.",
                 "targetAbi": "12.3.0.0",
