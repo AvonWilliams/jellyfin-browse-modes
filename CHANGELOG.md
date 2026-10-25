@@ -19,6 +19,20 @@ tag now builds only the ABI of its own Jellyfin major.minor.
 - CI (`plugin.yml`) derives the Jellyfin ABI from the tag and fails if the tag's major.minor is not
   in its supported list.
 
+**Installer** — `install-browse-modes.sh` now follows `compat.json` instead of "latest".
+
+- Installs only the release listed for the running Jellyfin major.minor; with no entry it changes
+  nothing. Never downgrades and never installs a bundle for another Jellyfin version.
+- Verifies the plugin MD5 (`manifest.json`) and web SHA-256 (`compat.json`) before touching any
+  file, backs up what it replaces, health-checks the server after the restart and rolls back on
+  failure. Takes a lock so cron and manual runs cannot overlap.
+- New flags `--dry-run`, `--status`, `--auto`, `--enable-auto-update`, `--disable-auto-update`.
+  Auto-update (native installs only, off by default) installs a root-owned local copy of the script
+  and one daily cron line; see the README.
+- New `compat.json` (Jellyfin 12.2 -> 2.4.2 listed; 12.3 is added once 12.3.0 is released),
+  `RELEASING.md` runbook, a daily workflow that opens an issue when an unlisted Jellyfin release
+  appears, and `tests/test-installer.sh`.
+
 ## 1.0.2.0 — 2026-08-02
 
 **Plugin** — backported to Jellyfin 10.11.x (stable).

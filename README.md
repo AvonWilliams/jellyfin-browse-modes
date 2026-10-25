@@ -39,9 +39,12 @@ Pick the clients you care about:
 ### Quick install / update (script)
 
 The repo ships [`install-browse-modes.sh`](install-browse-modes.sh), which detects your server's
-Jellyfin version, downloads the latest plugin + web bundle releases, and applies them — stopping
-Jellyfin, applying the changes, then starting it again. Safe to re-run: it skips anything already
-up to date.
+Jellyfin version, looks up the plugin + web bundle release that was tested against it in
+[`compat.json`](compat.json), checks both downloads against their published checksums, and applies
+them — stopping Jellyfin, backing up what it replaces, applying the changes, then starting it again
+and checking the server answers (it rolls back from the backup if it does not). If your Jellyfin
+version has no tested release, it says so and changes nothing. Safe to re-run: it skips anything
+already up to date and never downgrades.
 
 Native installs need **root** — the script writes `/var/lib/jellyfin` and `/usr/share/jellyfin`,
 so run it with `sudo`. Docker installs use `--docker` instead and don't need root.
@@ -75,7 +78,68 @@ wget -qO- https://raw.githubusercontent.com/AvonWilliams/jellyfin-browse-modes/r
 ```
 
 On Docker, append `--docker <container-name>` (and drop `sudo`). Use `--plugin-only` / `--web-only`
-to apply just one half. See `--help` for the rest.
+to apply just one half, and `--dry-run` to download and verify without changing anything. See
+`--help` for the rest.
+
+### Automatic updates (optional)
+
+Off by default. If you want fixes for your Jellyfin version applied without remembering to run the
+script, the installer can set itself up as a daily job. **Native installs only** (not Docker, see
+below). Run it from a saved copy of the script, not piped from `curl`, because that saved copy is
+what gets installed:
+
+```bash
+curl -fsSL -o install-browse-modes.sh https://raw.githubusercontent.com/AvonWilliams/jellyfin-browse-modes/refs/heads/main/install-browse-modes.sh
+less install-browse-modes.sh          # read it first
+sudo bash install-browse-modes.sh --enable-auto-update
+```
+
+It prints exactly what it added. Afterwards:
+
+```bash
+sudo bash /usr/local/lib/browse-modes/updater.sh --status             # versions, cron state, last run result
+sudo bash /usr/local/lib/browse-modes/updater.sh --disable-auto-update
+```
+
+If the local copy is missing or broken, remove it by hand. The job is the single line in root's
+crontab that ends in `# browse-modes-auto-update`:
+
+```bash
+sudo crontab -l | grep -vF '# browse-modes-auto-update' | sudo crontab -
+sudo rm -rf /usr/local/lib/browse-modes
+```
+
+**What it does.** Once a day, at a random time between 02:00 and 05:59, it runs the stored local
+copy of the installer with `--auto`. If `compat.json` lists a tested release for your running
+Jellyfin version and your installed plugin or web bundle is older, or the web bundle was replaced
+by a Jellyfin upgrade, it downloads the release, verifies the checksums, backs up the current files
+under `/var/lib/browse-modes-updater/backups/` (last three kept), restarts Jellyfin, and rolls back
+if the server does not come back. Results go to `/var/lib/browse-modes-updater/updater.log` and
+syslog.
+
+**What it does not do.**
+
+- It does not upgrade Jellyfin itself. Update Jellyfin the way you normally do.
+- It does nothing when there is no tested release for your Jellyfin version. Right after a Jellyfin
+  release, you stay on what you have until a matching Browse Modes release is published.
+- It never downgrades, and never installs a release meant for a different Jellyfin version.
+- It does not update itself. Newer installer logic only arrives if you run
+  `--enable-auto-update` again from a fresh download.
+- It restarts Jellyfin when it installs something (nothing is restarted on a no-op day).
+
+**Trust.** This is a root cron job that runs a script stored on your machine, and that script
+downloads and installs files. The script is the copy you inspected, owned by root and not fetched
+again on each run. What it downloads is checked before it is used: the plugin against the MD5 in
+`manifest.json` and the web bundle against the SHA-256 in `compat.json`, both read from this
+repository's `main` branch. So the checksums are only as trustworthy as that branch and your
+network path to GitHub; if you do not want to depend on that, leave auto-update off and run the
+installer by hand after reading what changed.
+
+**Docker.** Not supported, deliberately. Recreating a container (an image pull, `docker compose up`)
+discards a web bundle that was copied into it, so a cron job beside it would only ever re-copy
+into a container that is about to be replaced again. Bind-mount the bundle over the web root
+instead (see the web client section below), and run `install-browse-modes.sh --docker <name>` by
+hand when you update; `--enable-auto-update` refuses `--docker`.
 
 ### 1. The plugin
 
@@ -92,8 +156,9 @@ Only **Trending** and **Top Rated** need it — every other tile works without o
 
 ### 2. The web client
 
-Download the latest `jellyfin-web-browse-modes-<version>.zip` from
-[the web fork releases](https://github.com/AvonWilliams/jellyfin-web/releases).
+Download the `jellyfin-web-browse-modes-<version>.zip` that matches your Jellyfin version from
+[the web fork releases](https://github.com/AvonWilliams/jellyfin-web/releases) (the first two
+numbers match: `12.3.x` for Jellyfin 12.3; see [`compat.json`](compat.json)).
 
 The zip extracts its files at the top level (no `dist/` wrapper), so unzip into a fresh directory
 before copying — otherwise the cp will fail with "no such file or directory".
@@ -170,6 +235,7 @@ working. Source: [AvonWilliams/jellyfin-androidtv](https://github.com/AvonWillia
 |---|---|
 | [User guide](docs/USER-GUIDE.md) | What each tile does, install walkthrough, troubleshooting |
 | [Technical reference](docs/TECHNICAL.md) | Every deviation from stock Jellyfin, and how to re-apply it to a new Jellyfin release |
+| [Releasing](RELEASING.md) | The runbook for supporting a new Jellyfin release |
 | [10.11 back-port scoping](docs/BACKPORT-10.11.md) | What the 10.11 backport involved. Done August 2026 |
 
 ## Building from source
@@ -187,13 +253,23 @@ keeping it would have meant forking the server. Dropping one tile was the better
 
 ## Compatibility
 
-Built against **Jellyfin 12.2/12.3** (web client) and **12.0/12.1/12.2/12.3** (plugin). Android TV: **0.19.9**.
+Releases are numbered `<Jellyfin major>.<Jellyfin minor>.<patch>`. **`12.3.x` was tested on
+Jellyfin 12.3**; the third number is ours and goes up for fixes within the same Jellyfin version.
+[`compat.json`](compat.json) is the list of tested releases the installer and auto-update follow,
+and a Jellyfin version that is not in it is unsupported until a release is tested and added
+(see [RELEASING.md](RELEASING.md)).
 
-> **The plugin works on both 10.11.x and 12.x.** The web client now targets **12.2 only**; the TV
-> client targets 10.11 and 12.x. The 10.11 web backport lives on the `browse-modes-10.11` branch.
-> See the [back-port scoping](docs/BACKPORT-10.11.md) for details. A Jellyfin update will
-overwrite the web build, and the TV app will not auto-update — see the technical reference for
-how to re-apply to a newer release.
+- **Jellyfin 12.2:** plugin and web 2.4.2 (listed in `compat.json`).
+- **Jellyfin 12.3:** plugin and web 12.3.0. Listed in `compat.json` once released; until then the
+  installer reports no tested release for 12.3.
+- **Plugin only, frozen at 2.4.2:** Jellyfin 12.0 and 12.1, via the plugin catalog.
+- Android TV: **0.19.9**.
+
+> **The plugin also works on 10.11.x.** The TV client targets 10.11 and 12.x. The 10.11 web
+> backport lives on the `browse-modes-10.11` branch. See the
+> [back-port scoping](docs/BACKPORT-10.11.md) for details. A Jellyfin update will overwrite the web
+> build, and the TV app will not auto-update — see the technical reference for how to re-apply to a
+> newer release.
 
 ## Licence
 
