@@ -106,8 +106,10 @@ Other options:
   -h, --help             Show this help
 
 Every install run ends with a summary per server (result, versions now
-installed, backup location, auto-update state). The exit code is nonzero when
-a server failed; a run for one server with no tested release exits 3.
+installed, backup location, auto-update state). Exit codes: 0 when everything
+went well or there was nothing to do; 1 when a server failed (with several
+servers: any failure); 3 when every chosen server was skipped because it has no
+tested release (--auto exits 0 for that); 2 for wrong usage.
 
 Environment: JELLYFIN_HOST and JELLYFIN_PORT set the defaults for --host/--port.
 A native install (and its auto-update job) needs root. --status and --dry-run
@@ -1532,6 +1534,11 @@ plan_line() {
   fi
 }
 
+# Whether the record is a running server that has no tested release.
+rec_no_release() {
+  [ "$(rf "$1" 4)" = "running" ] && [ "$(rf "$1" 7)" != "1" ] && case "$(rf "$1" 8)" in "no tested release"*) true ;; *) false ;; esac
+}
+
 # Chooses the targets to work on and leaves them in RUN_TARGETS.
 RUN_TARGETS=()
 choose_targets() {
@@ -1556,6 +1563,8 @@ choose_targets() {
   if [ "$ALL_TARGETS" -eq 1 ] || { [ "$YES" -eq 1 ] && { [ "$n" -gt 1 ] || [ "$INTERACTIVE" -eq 0 ]; }; }; then
     if [ "${#supported[@]}" -eq 0 ]; then
       echo "None of these servers has a tested Browse Modes release, so nothing was changed."
+      # 3 like --target does when the missing release is the reason.
+      for rec in "${CAND[@]}"; do if rec_no_release "$rec"; then exit 3; fi; done
       exit 0
     fi
     SEL=" ${supported[*]} "
@@ -1582,13 +1591,16 @@ choose_targets() {
   echo "Plan:"
   for idx in $SEL; do plan_line "${CAND[$((idx - 1))]}"; done
   echo
-  actionable=0
+  actionable=0; no_rel=0
   for idx in $SEL; do
     rec="${CAND[$((idx - 1))]}"
     if [ "$(rf "$rec" 4)" = "running" ] && [ "$(rf "$rec" 7)" = "1" ]; then actionable=$((actionable + 1)); fi
+    if rec_no_release "$rec"; then no_rel=$((no_rel + 1)); fi
   done
   if [ "$actionable" -eq 0 ]; then
     echo "None of the chosen servers can be updated right now, so nothing was changed."
+    # Same code as --target gives when the chosen server has no tested release.
+    if [ "$no_rel" -eq "${#RUN_TARGETS[@]}" ]; then exit 3; fi
     exit 0
   fi
   if [ "$DRY_RUN" -eq 1 ]; then
@@ -1744,16 +1756,20 @@ if [ "$AUTO" -eq 0 ]; then
   print_summary
 fi
 
-# One target keeps its own exit code (3 means no tested release); with several,
-# any failed target makes the whole run fail.
+# One target keeps its own exit code (3 means no tested release). With several:
+# any failed target fails the run (1); otherwise anything installed, up to date
+# or checked gives 0; only when every target was skipped for lack of a tested
+# release is it 3. --auto always exits 0 for that.
 if [ "${#RUN_TARGETS[@]}" -eq 1 ]; then
   exit "${RUN_RCS[0]}"
 fi
-rc_total=0
+rc_total=0; n_noentry=0
 idx=0
 for t in "${RUN_TARGETS[@]}"; do
   lbl=$(result_label "$RES_DIR/$idx" "${RUN_RCS[$idx]}")
   if [ "${lbl#*|}" = "1" ]; then rc_total=1; fi
+  if [ "$(res_get "$RES_DIR/$idx" result)" = "no-entry" ]; then n_noentry=$((n_noentry + 1)); fi
   idx=$((idx + 1))
 done
+if [ "$rc_total" -eq 0 ] && [ "$AUTO" -eq 0 ] && [ "$n_noentry" -eq "${#RUN_TARGETS[@]}" ]; then rc_total=3; fi
 exit "$rc_total"

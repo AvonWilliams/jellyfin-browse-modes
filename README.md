@@ -210,8 +210,10 @@ plugin and web bundle versions now installed; where the backup is; whether autom
 enabled; then totals, the log file and next steps (hard refresh the page, how to roll back, how to
 switch automatic updates on or off).
 
-The exit code is `0` when nothing failed, `1` if any server failed or was rolled back, and `3`
-when you ran it for one server and there was no tested release for its Jellyfin version.
+The exit code is `0` when nothing failed (installed, already up to date, or a dry run), `1` if any
+server failed or was rolled back, and `3` when every server you chose was skipped because there is
+no tested release for its Jellyfin version (a mix of skipped and installed servers is `0`).
+`--auto` exits `0` in that case so cron stays quiet.
 
 ### What the script does to your server
 

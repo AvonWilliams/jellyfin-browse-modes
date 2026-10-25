@@ -201,6 +201,46 @@ check "--auto never asks, even with a terminal" bash -c "! grep -q 'Which server
 check "--auto still installs natively" grep -q 12.3.0 "$work/web/index.html"
 check "--auto prints no summary" bash -c "! grep -q 'Summary' '$work/out'"
 
+# ---- exit codes when nothing has a tested release ------------------------------
+echo "== exit codes"
+reset_all; native_up
+echo 12.9.1 > "$work/jf_version"
+answers ""
+run_ix "$work/answers"; rc=$?
+check "interactive: the only server has no tested release -> exit 3" test "$rc" -eq 3
+check "interactive: no tested release -> nothing changed" grep -q NATIVESTOCK "$work/web/index.html"
+run_ix - --yes; rc=$?
+check "--yes: no server has a tested release -> exit 3" test "$rc" -eq 3
+run_ix - --all; rc=$?
+check "--all: no server has a tested release -> exit 3" test "$rc" -eq 3
+run_ix - --target native; rc=$?
+check "--target: no tested release -> exit 3 (as before)" test "$rc" -eq 3
+run_ix - --auto; rc=$?
+check "--auto: no tested release stays exit 0" test "$rc" -eq 0
+new_ctr jfa; echo 12.9.1 > "$work/ctr/jfa/version"
+answers 1-2 y
+run_ix "$work/answers"; rc=$?
+check "interactive: several chosen, all without a tested release -> exit 3" test "$rc" -eq 3
+run_ix - --target native --target docker:jfa; rc=$?
+check "--target x2: all skipped for lack of a release -> exit 3" test "$rc" -eq 3
+run_ix - --auto --target native --target docker:jfa; rc=$?
+check "--auto with several targets, all without a release -> exit 0" test "$rc" -eq 0
+echo 12.3.0 > "$work/ctr/jfa/version"
+run_ix - --target native --target docker:jfa; rc=$?
+check "mix: one installed, one skipped for lack of a release -> exit 0" test "$rc" -eq 0
+echo 12.3.0 > "$work/jf_version"; echo 12.9.1 > "$work/ctr/jfa/version"
+run_ix - --target native --target docker:jfa; rc=$?
+check "mix: native installed, container skipped -> exit 0" test "$rc" -eq 0
+run_ix - --target native --target docker:jfa; rc=$?
+check "mix: a rerun with one up to date and one skipped -> exit 0" test "$rc" -eq 0
+reset_all; native_up; new_ctr jfa; new_ctr jfb; echo 12.9.1 > "$work/ctr/jfb/version"
+touch "$work/cp_fail"
+run_ix - --target docker:jfa --target docker:jfb; rc=$?
+check "mix: one failed, one skipped -> exit 1" test "$rc" -eq 1
+reset_all; native_up; new_ctr jfa; echo 12.9.1 > "$work/ctr/jfa/version"
+run_ix - --dry-run --target native --target docker:jfa; rc=$?
+check "mix: dry run of one, skipped other -> exit 0" test "$rc" -eq 0
+
 # ---- 5. several targets, one fails -------------------------------------------
 echo "== independent targets"
 reset_all; native_up; new_ctr jfa; new_ctr jfb
