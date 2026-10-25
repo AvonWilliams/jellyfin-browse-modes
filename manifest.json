@@ -13,8 +13,8 @@
                 "changelog": "Jellyfin 12.3 support.",
                 "targetAbi": "12.3.0.0",
                 "sourceUrl": "https://github.com/AvonWilliams/jellyfin-browse-modes/releases/download/v12.3.0/browse-modes_12.3.0_12.3.0.zip",
-                "checksum": "PENDING-CI",
-                "timestamp": "PENDING-CI"
+                "checksum": "64a8207b79dacc40ff317c86f1001f82",
+                "timestamp": "2026-10-25T11:11:26Z"
             },
             {
                 "version": "2.4.2",
