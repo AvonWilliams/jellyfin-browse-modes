@@ -153,6 +153,7 @@ reset_target; echo OLD > "$work/web/index.html"
 run_installer; rc=$?
 check "wrong plugin md5 is refused" test "$rc" -ne 0
 check "wrong plugin md5 reports the mismatch" contains "$work/out" "Checksum mismatch"
+check "wrong plugin md5: no raw md5sum warning" lacks "$work/out" "WARNING"
 check "wrong plugin md5: nothing stopped" test ! -e "$work/systemctl.log"
 
 build_release 12.3.0 12.3.0 12.3
@@ -161,6 +162,8 @@ reset_target; echo OLD > "$work/web/index.html"
 run_installer; rc=$?
 check "wrong web sha256 is refused" test "$rc" -ne 0
 check "wrong web sha256: nothing stopped" test ! -e "$work/systemctl.log"
+check "wrong web sha256: no raw sha256sum warning" lacks "$work/out" "WARNING"
+check "wrong web sha256: our own message is there" contains "$work/out" "SHA-256 mismatch"
 
 # A 12.x-numbered web bundle that belongs to another Jellyfin version.
 build_release 12.3.0 12.2.0 12.3

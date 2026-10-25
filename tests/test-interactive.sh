@@ -158,6 +158,15 @@ check "single server: n says nothing was changed" contains "$work/out" "Nothing 
 check "plan lists the backup location" contains "$work/out" "backed up under $work/state/backups/"
 check "plan names the versions" contains "$work/out" "install plugin 12.3.0 and web bundle 12.3.0 for Jellyfin 12.3"
 
+reset_all; native_up; new_ctr jfa; new_ctr jfb
+answers 2 n
+run_ix "$work/answers"
+check "one of several chosen: the question names that server" contains "$work/out" "Go ahead with docker:jfa? [Y/n]"
+check "one of several chosen: no '1 server(s)'" lacks "$work/out" "server(s)"
+answers 1-2 n
+run_ix "$work/answers"
+check "several chosen: plural with the names" contains "$work/out" "Go ahead with these 2 servers (native, docker:jfa)? [Y/n]"
+
 reset_all; native_up; new_ctr jfa
 answers 1-2 n
 run_ix "$work/answers"
@@ -276,6 +285,29 @@ reset_all; native_up
 mkdir -p "$work/plugins/Browse Modes_2.2.0.0"; echo '{"name":"Browse Modes","version":"2.2.0.0"}' > "$work/plugins/Browse Modes_2.2.0.0/meta.json"
 run_ix - --native
 check "summary: updated when an older plugin was installed" contains "$work/out" "Result:       updated"
+
+# Next steps and the backup hint only appear when there is something to act on.
+reset_all; native_up; new_ctr jfa
+run_ix - --dry-run --target native --target docker:jfa; rc=$?
+check "dry run: summary counts dry runs apart from skips" contains "$work/out" "2 target(s): 0 installed or updated, 0 already up to date, 0 skipped, 2 dry run (nothing changed), 0 failed."
+check "dry run: no backup hint" lacks "$work/out" "backup folder"
+check "dry run: no next steps at all" lacks "$work/out" "Next steps"
+check "dry run: no hard refresh advice" lacks "$work/out" "hard refresh"
+run_ix - --target native --target docker:jfa
+run_ix - --target native --target docker:jfa
+check "no-op run: summary says already up to date" contains "$work/out" "2 already up to date"
+check "no-op run: no backup hint" lacks "$work/out" "backup folder"
+check "no-op run: no hard refresh advice" lacks "$work/out" "hard refresh"
+check "no-op run: no backup line in the per-server block" lacks "$work/out" "Backup:"
+reset_all; native_up
+echo 12.9.1 > "$work/jf_version"
+run_ix - --target native
+check "skipped run: no backup hint" lacks "$work/out" "backup folder"
+check "skipped run: no next steps" lacks "$work/out" "Next steps"
+echo 12.3.0 > "$work/jf_version"
+run_ix - --target native
+check "install run: backup hint present" contains "$work/out" "backup folder"
+check "install run: hard refresh advice present" contains "$work/out" "hard refresh"
 
 # ---- 7. auto-update question -------------------------------------------------
 echo "== auto-update question"

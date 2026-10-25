@@ -1100,7 +1100,7 @@ else:
 
   log "Downloading $(basename "$asset_url")"
   fetch -o "$tmp/plugin.zip" "$asset_url" || die "Download failed: ${asset_url}"
-  printf '%s  %s\n' "$checksum" "$tmp/plugin.zip" | md5sum -c - >/dev/null \
+  printf '%s  %s\n' "$checksum" "$tmp/plugin.zip" | md5sum -c - >/dev/null 2>&1 \
     || die "Checksum mismatch for $(basename "$asset_url"); nothing changed"
 
   # The zip contains the .dlls and meta.json at its top level (no wrapper
@@ -1129,7 +1129,7 @@ if [ "$web_update" -eq 1 ]; then
   web_url="${WEB_REL_BASE}/v${C_WEB}-web/jellyfin-web-browse-modes-${C_WEB}.zip"
   log "Downloading $(basename "$web_url")"
   fetch -o "$tmp/web.zip" "$web_url" || die "Download failed: ${web_url}"
-  printf '%s  %s\n' "$web_sha" "$tmp/web.zip" | sha256sum -c - >/dev/null \
+  printf '%s  %s\n' "$web_sha" "$tmp/web.zip" | sha256sum -c - >/dev/null 2>&1 \
     || die "SHA-256 mismatch for $(basename "$web_url"); nothing changed"
   mkdir -p "$tmp/web_stage"
   unzip -q -o "$tmp/web.zip" -d "$tmp/web_stage"
@@ -1542,7 +1542,7 @@ rec_no_release() {
 # Chooses the targets to work on and leaves them in RUN_TARGETS.
 RUN_TARGETS=()
 choose_targets() {
-  local i rec n idx actionable
+  local i rec n idx actionable no_rel who
   discover
   n="${#CAND[@]}"
   if [ "$n" -eq 0 ]; then
@@ -1609,7 +1609,9 @@ choose_targets() {
     if [ "$n" -eq 1 ]; then
       confirm "Go ahead with this server?" y || { echo "Nothing was changed."; exit 0; }
     else
-      confirm "Go ahead with these ${#RUN_TARGETS[@]} server(s)?" y || { echo "Nothing was changed."; exit 0; }
+      if [ "${#RUN_TARGETS[@]}" -eq 1 ]; then who="${RUN_TARGETS[0]}"
+      else who="these ${#RUN_TARGETS[@]} servers ($(printf '%s, ' "${RUN_TARGETS[@]}" | sed 's/, $//'))"; fi
+      confirm "Go ahead with ${who}?" y || { echo "Nothing was changed."; exit 0; }
     fi
   fi
 }
@@ -1685,7 +1687,8 @@ offer_auto_update() {
 ENABLED_NOW=()
 
 print_summary() {
-  local idx=0 t f lbl failed=0 ok_changed=0 skipped=0 uptodate=0 line auto logs="" rcs
+  local idx=0 t f lbl failed=0 ok_changed=0 skipped=0 uptodate=0 dry=0 line auto logs="" any_backup=0 any_off=0
+  local -a steps=()
   echo
   echo "Summary"
   echo "======="
@@ -1695,11 +1698,13 @@ print_summary() {
     case "${lbl%|*}" in
       installed|updated) ok_changed=$((ok_changed + 1)) ;;
       "already up to date") uptodate=$((uptodate + 1)) ;;
-      skipped*|dry\ run*) skipped=$((skipped + 1)) ;;
+      skipped*) skipped=$((skipped + 1)) ;;
+      dry\ run*) dry=$((dry + 1)) ;;
     esac
     if [ "${lbl#*|}" = "1" ]; then failed=$((failed + 1)); fi
     line=$(set_target "$t"; cron_line)
-    if [ -n "$line" ]; then auto="enabled"; else auto="not enabled"; fi
+    if [ -n "$line" ]; then auto="enabled"; else auto="not enabled"; any_off=1; fi
+    if [ -n "$(res_get "$f" backup)" ]; then any_backup=1; fi
     echo "  ${t}"
     echo "      Jellyfin:     $(res_get "$f" jellyfin)"
     echo "      Result:       ${lbl%|*}"
@@ -1710,19 +1715,29 @@ print_summary() {
     idx=$((idx + 1))
   done
   echo
-  echo "  ${#RUN_TARGETS[@]} target(s): ${ok_changed} installed or updated, ${uptodate} already up to date, ${skipped} skipped, ${failed} failed."
+  echo "  ${#RUN_TARGETS[@]} target(s): ${ok_changed} installed or updated, ${uptodate} already up to date, ${skipped} skipped,$([ "$dry" -gt 0 ] && printf ' %s dry run (nothing changed),' "$dry") ${failed} failed."
   if [ "$DRY_RUN" -eq 0 ]; then echo "  Log:${logs}"; fi
-  echo
-  echo "Next steps"
+  # Next steps: only what applies to this run.
   if [ "$ok_changed" -gt 0 ]; then
-    echo "  - Reload the Jellyfin web page with a hard refresh (Ctrl+Shift+R) so the browser picks up the new files."
+    steps+=("Reload the Jellyfin web page with a hard refresh (Ctrl+Shift+R) so the browser picks up the new files.")
   fi
   if [ "$failed" -gt 0 ]; then
-    echo "  - A failed target was rolled back or left as it was; read the messages above and the log."
+    steps+=("A failed target was rolled back or left as it was; read the messages above and the log.")
   fi
-  echo "  - To undo an install, copy the files from the backup folder shown above back (see the README, Troubleshooting)."
-  echo "  - Automatic updates are off unless shown as enabled. Turn them on with --enable-auto-update"
-  echo "    (add --docker NAME for a container) and off with --disable-auto-update (--all removes every job)."
+  if [ "$any_backup" -eq 1 ]; then
+    steps+=("To undo an install, copy the files from the backup folder shown above back (see the README, Troubleshooting).")
+  fi
+  if [ "$DRY_RUN" -eq 0 ] && [ "$any_off" -eq 1 ] && [ $((ok_changed + uptodate)) -gt 0 ]; then
+    steps+=("Automatic updates are off unless shown as enabled. Turn them on with --enable-auto-update"
+      "  (add --docker NAME for a container) and off with --disable-auto-update (--all removes every job).")
+  fi
+  if [ "${#steps[@]}" -gt 0 ]; then
+    echo
+    echo "Next steps"
+    for line in "${steps[@]}"; do
+      case "$line" in "  "*) echo "  $line" ;; *) echo "  - $line" ;; esac
+    done
+  fi
   SUMMARY_FAILED="$failed"
 }
 SUMMARY_FAILED=0
