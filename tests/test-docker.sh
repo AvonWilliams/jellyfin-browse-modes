@@ -111,11 +111,31 @@ check "recreated container: plugin left alone" contains "$work/state/state.docke
 check "recreated container: restarted again" test "$(restarts)" -eq 2
 check "recreated container: log says web only" contains "$work/state/state.docker-jf" "Installed web 12.3.0"
 
+# Package reinstall inside the container: stock files are back, the marker survived.
+check "docker: fingerprint file recorded in the web root" test -s "$(webdir jf)/.browse-modes-files"
+r0=$(restarts)
+run_dk --auto --docker jf
+check "docker: untouched bundle is a no-op (no restart)" test "$(restarts)" -eq "$r0"
+echo "<html>stock 12.3.1</html>" > "$(webdir jf)/index.html"
+run_dk --auto --docker jf; rc=$?
+check "docker: replaced web files with the marker intact: exit 0" test "$rc" -eq 0
+check "docker: replaced web files are re-applied" bash -c "grep -q 12.3.0 '$(webdir jf)/index.html' && ! grep -q 'stock 12.3.1' '$(webdir jf)/index.html'"
+check "docker: re-apply restarts the container" test "$(restarts)" -eq $((r0 + 1))
+check "docker: re-apply logs the reason" contains "$work/state/updater.log" "no longer matches the installed bundle"
+check "docker: re-apply left the plugin alone" test -d "$(cfgdir jf)/plugins/Browse Modes_12.3.0"
+run_dk --auto --docker jf
+check "docker: after the re-apply the next run is a no-op" test "$(restarts)" -eq $((r0 + 1))
+rm -f "$(webdir jf)/.browse-modes-files"
+run_dk --auto --docker jf
+check "docker: marker without fingerprint is re-applied once" test "$(restarts)" -eq $((r0 + 2))
+check "docker: fingerprint is written again" test -s "$(webdir jf)/.browse-modes-files"
+r0=$(restarts)
+
 # Never downgrade.
 echo '{"name":"Browse Modes","version":"12.3.5"}' > "$(cfgdir jf)/plugins/Browse Modes_12.3.0/meta.json"
 echo 12.3.5 > "$(webdir jf)/.browse-modes-version"
 run_dk --auto --docker jf; rc=$?
-check "newer installed plugin/web are not downgraded" test "$(restarts)" -eq 2
+check "newer installed plugin/web are not downgraded" test "$(restarts)" -eq "$r0"
 check "downgrade run exits 0" test "$rc" -eq 0
 
 # --plugin-only / --web-only

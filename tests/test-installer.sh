@@ -178,6 +178,59 @@ run_installer --auto; rc=$?
 check "stock web root after a Jellyfin upgrade is repaired" contains "$work/web/index.html" "12.3.0"
 check "repair left the plugin alone" test -f "$work/plugins/Browse Modes_12.3.0/meta.json"
 
+# The marker alone is not enough: the files must still be ours.
+echo "== web fingerprint"
+check "install records a file fingerprint next to the marker" contains "$work/web/.browse-modes-files" "  index.html"
+rm -f "$work/systemctl.log"
+run_installer --auto; rc=$?
+check "untouched bundle: no-op exit 0" test "$rc" -eq 0
+check "untouched bundle: server not restarted" test ! -e "$work/systemctl.log"
+check "untouched bundle: state is noop" contains "$work/state/state" "last_result=noop"
+# apt/dpkg reinstall: stock files are back, marker and our extra chunk survived.
+echo "<html>STOCK reinstall</html>" > "$work/web/index.html"
+rm -f "$work/systemctl.log"
+run_installer --auto; rc=$?
+check "reinstalled stock files with the marker intact: exit 0" test "$rc" -eq 0
+check "reinstalled stock files with the marker intact: bundle re-applied" contains "$work/web/index.html" "12.3.0"
+check "reinstalled stock files: server stopped and started" bash -c "grep -q 'stop jellyfin' '$work/systemctl.log' && grep -q 'start jellyfin' '$work/systemctl.log'"
+check "reinstalled stock files: reason is logged" contains "$work/state/updater.log" "no longer matches the installed bundle"
+check "reinstalled stock files: backup holds the replaced files" bash -c "grep -q 'STOCK reinstall' '$work'/state/backups/*/web/index.html"
+check "reinstalled stock files: state records the install" contains "$work/state/state" "last_result=ok"
+rm -f "$work/systemctl.log"
+run_installer --auto
+check "after the re-apply the next run is a no-op again" test ! -e "$work/systemctl.log"
+# Same-minor upgrade of jellyfin-web (12.3.0 -> 12.3.1): different index.html, marker intact.
+echo "<html>stock 12.3.1</html>" > "$work/web/index.html"
+echo "newer chunk" > "$work/web/main.js"
+rm -f "$work/systemctl.log"
+run_installer --auto; rc=$?
+check "same-minor web upgrade: bundle re-applied" bash -c "grep -q '12.3.0' '$work/web/index.html' && ! grep -q 'stock 12.3.1' '$work/web/index.html'"
+check "same-minor web upgrade: server restarted" contains "$work/systemctl.log" "start jellyfin"
+check "same-minor web upgrade: exit 0" test "$rc" -eq 0
+# A bundle file that disappeared counts as changed too.
+rm -f "$work/web/index.html"
+rm -f "$work/systemctl.log"
+run_installer --auto
+check "missing bundle file: re-applied" contains "$work/web/index.html" "12.3.0"
+# Marker written by an older script (no fingerprint): installed once more to record one.
+rm -f "$work/web/.browse-modes-files"
+rm -f "$work/systemctl.log"
+run_installer --auto; rc=$?
+check "marker without fingerprint: re-applied once" contains "$work/systemctl.log" "start jellyfin"
+check "marker without fingerprint: says why" contains "$work/state/updater.log" "no file fingerprint is recorded"
+check "marker without fingerprint: fingerprint written" test -s "$work/web/.browse-modes-files"
+rm -f "$work/systemctl.log"
+run_installer --auto
+check "marker without fingerprint: second run is a no-op" test ! -e "$work/systemctl.log"
+# --status says so, and --dry-run reports the work.
+echo "<html>STOCK again</html>" > "$work/web/index.html"
+run_installer --status
+check "status flags files that no longer match" contains "$work/out" "no longer matches the installed bundle"
+run_installer --dry-run
+check "dry run plans the re-apply" contains "$work/out" "web bundle 12.3.0 (sha256 ok)"
+check "dry run did not touch the files" contains "$work/web/index.html" "STOCK again"
+run_installer --auto
+
 # Never downgrade.
 echo '{"name":"Browse Modes","version":"12.3.5"}' > "$work/plugins/Browse Modes_12.3.0/meta.json"
 echo 12.3.5 > "$work/web/.browse-modes-version"

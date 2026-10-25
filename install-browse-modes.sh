@@ -388,6 +388,66 @@ installed_web_version() {
   fi
 }
 
+# Fingerprint of the installed web bundle. The marker alone cannot tell that the
+# files are still ours: an apt/dpkg reinstall or a same-minor upgrade of
+# jellyfin-web (12.3.0 -> 12.3.1) puts stock files back but leaves the marker
+# and our extra chunks. So the install also records the SHA-256 of these files
+# as they were in the verified zip, next to the marker, and a bundle only counts
+# as installed while the files on disk still match.
+FP_FILE=".browse-modes-files"
+FP_NAMES="index.html runtime.bundle.js main.jellyfin.bundle.js"
+WEB_STALE_WHY=""
+
+# Lines "<sha256>  <name>" for the fingerprint files present in host dir $1.
+fp_make() {
+  local n
+  for n in $FP_NAMES; do
+    [ -f "$1/$n" ] || continue
+    printf '%s  %s\n' "$(sha256sum < "$1/$n" | cut -d' ' -f1)" "$n"
+  done
+}
+
+# SHA-256 of file $1 in the target's web root; nothing when it is missing.
+web_file_sha() {
+  if [ -n "$CONTAINER" ]; then
+    [ -n "$DK_WEB" ] || return 0
+    docker exec "$CONTAINER" test -f "$DK_WEB/$1" 2>/dev/null || return 0
+    docker exec "$CONTAINER" cat "$DK_WEB/$1" 2>/dev/null | sha256sum | cut -d' ' -f1
+  else
+    [ -f "$web_dir/$1" ] || return 0
+    sha256sum < "$web_dir/$1" | cut -d' ' -f1
+  fi
+}
+
+# Whether the web files on disk are still the ones the recorded fingerprint
+# describes. On failure WEB_STALE_WHY says why (no fingerprint recorded, which
+# is the case for a bundle installed by an older version of this script, or
+# files that changed).
+web_files_match() {
+  local rec sum name seen=0
+  WEB_STALE_WHY=""
+  if [ -n "$CONTAINER" ]; then
+    [ -n "$DK_WEB" ] || return 0
+    rec=$(docker exec "$CONTAINER" cat "$DK_WEB/$FP_FILE" 2>/dev/null || true)
+  else
+    rec=$(cat "$web_dir/$FP_FILE" 2>/dev/null || true)
+  fi
+  while read -r sum name; do
+    case " $FP_NAMES " in *" $name "*) ;; *) continue ;; esac
+    [[ "$sum" =~ ^[0-9a-f]{64}$ ]] || continue
+    seen=1
+    if [ "$(web_file_sha "$name")" != "$sum" ]; then
+      WEB_STALE_WHY="${name} no longer matches the installed bundle (the web files were replaced)"
+      return 1
+    fi
+  done <<< "$rec"
+  if [ "$seen" -eq 0 ]; then
+    WEB_STALE_WHY="no file fingerprint is recorded (installed by an older version of this script)"
+    return 1
+  fi
+  return 0
+}
+
 # Sets C_PLUGIN / C_WEB / C_WEB_SHA for $major_minor. Returns 3 when there is no
 # entry, 4 when compat.json is unusable.
 C_PLUGIN=""; C_WEB=""; C_WEB_SHA=""
@@ -664,6 +724,9 @@ do_status() {
   ip=$(installed_plugin_version); iw=$(installed_web_version)
   echo "  Installed plugin:     ${ip:-not installed}"
   echo "  Installed web bundle: ${iw:-not installed (or not installed by this script)}"
+  if [ -n "$iw" ] && { [ -z "$CONTAINER" ] || [ -n "$DK_WEB" ]; } && ! web_files_match; then
+    echo "                        but ${WEB_STALE_WHY}; the next run installs it again"
+  fi
   line=$(cron_line)
   if [ -n "$line" ]; then
     echo "  Auto-update:          enabled"
@@ -968,7 +1031,12 @@ fi
 if [ "$PLUGIN_ONLY" -eq 0 ] && [ "$C_WEB" != "-" ]; then
   installed_web=$(installed_web_version)
   if [ "$installed_web" = "$C_WEB" ]; then
-    log "Web bundle is already at ${C_WEB}."
+    if web_files_match; then
+      log "Web bundle is already at ${C_WEB}."
+    else
+      log "Web bundle ${C_WEB} is marked as installed, but ${WEB_STALE_WHY}; installing it again."
+      web_update=1
+    fi
   elif [ -n "$installed_web" ] && ver_gt "$installed_web" "$C_WEB"; then
     log "Installed web bundle ${installed_web} is newer than the tested ${C_WEB}; not downgrading."
   else
@@ -1054,6 +1122,7 @@ if [ "$web_update" -eq 1 ]; then
   mkdir -p "$tmp/web_stage"
   unzip -q -o "$tmp/web.zip" -d "$tmp/web_stage"
   [ -f "$tmp/web_stage/index.html" ] || die "Web bundle has no index.html at its top level; refusing"
+  fp_make "$tmp/web_stage" > "$tmp/web_stage/$FP_FILE"
   printf '%s\n' "$C_WEB" > "$tmp/web_stage/.browse-modes-version"
 fi
 
@@ -1357,6 +1426,10 @@ probe_target() {
   fi
   local pp pw
   pp=$(installed_plugin_version || true); pw=$(installed_web_version || true)
+  # A bundle whose files were replaced since (package reinstall) will be installed again.
+  if [ -n "$pw" ] && [ "$pw" = "$C_WEB" ] && [ "$state" = "running" ] && ! web_files_match; then
+    pw="${pw} (files changed, will be installed again)"
+  fi
   inst="plugin ${pp:-none}, web bundle ${pw:-none}"
   printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
     "$t" "$kind" "$name" "$state" "${ver:-unknown}" "$url" "$sup" "$compat" "$inst" "$note" \
