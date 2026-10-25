@@ -1,0 +1,82 @@
+name: Jellyfin release watch
+
+# Opens an issue when a new stable Jellyfin major.minor appears that has no
+# entry in compat.json, so the test-and-release runbook (RELEASING.md) is
+# started promptly. It only opens issues; it never builds or publishes.
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Open an issue for untested Jellyfin releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          suffix='released: test & release browse-modes'
+
+          # Newest stable release of each upstream repo (12.x and later only;
+          # older lines are not covered by this project's compat.json).
+          # Upstream tags the first release of a minor as v12.3 (no patch).
+          versions=""
+          for repo in jellyfin/jellyfin-web jellyfin/jellyfin; do
+            v=$(gh api "repos/$repo/releases?per_page=30" \
+              --jq '.[] | select(.prerelease == false and .draft == false) | .tag_name' \
+              | sed 's/^v//' | grep -E '^[0-9]+\.[0-9]+(\.[0-9]+)?$' | awk -F. '$1 >= 12' \
+              | sort -V | tail -1 || true)
+            if [ -n "$v" ]; then
+            case "$v" in *.*.*) ;; *) v="$v.0" ;; esac
+            versions="$versions $v"
+          fi
+          done
+          versions=$(printf '%s\n' $versions | sort -uV)
+          if [ -z "$versions" ]; then echo "No stable 12.x releases found"; exit 0; fi
+
+          issues=$(gh issue list --state all --limit 200 --json title,state)
+
+          for ver in $versions; do
+            mm=$(printf '%s' "$ver" | cut -d. -f1,2)
+            if jq -e --arg mm "$mm" '.releases | has($mm)' compat.json >/dev/null; then
+              echo "Jellyfin $ver: $mm is listed in compat.json, nothing to do"
+              continue
+            fi
+            title="Jellyfin $ver $suffix"
+            # Skip when this exact release already had an issue (open or
+            # closed), or any release of the same major.minor has an open one.
+            if printf '%s' "$issues" | jq -e --arg t "$title" --arg p "Jellyfin $mm." --arg s " $suffix" \
+                'any(.[]; .title == $t or (.state == "OPEN" and (.title | startswith($p)) and (.title | endswith($s))))' >/dev/null; then
+              echo "Jellyfin $ver: an issue already exists"
+              continue
+            fi
+            cat > body.md <<EOF
+          Jellyfin $ver is out and $mm has no entry in \`compat.json\`, so the installer and
+          auto-update do nothing for $mm users until a tested release is published.
+
+          Follow [RELEASING.md](https://github.com/${GITHUB_REPOSITORY}/blob/main/RELEASING.md):
+
+          - [ ] Rebase the web fork onto upstream \`v$ver\`
+          - [ ] Bump the plugin csproj package versions to match the server
+          - [ ] Test locally against the stock \`jellyfin/jellyfin:$mm\` image (checklist in RELEASING.md)
+          - [ ] Add $mm to \`SUPPORTED_JELLYFIN\` in \`.github/workflows/plugin.yml\`
+          - [ ] Tag the plugin \`v$mm.0\`, wait for CI, copy the MD5 from the CI summary into \`manifest.json\`
+          - [ ] Tag and upload the web release \`v$mm.0-web\`, download the asset back, record its SHA-256
+          - [ ] Add the $mm entry to \`compat.json\` and push (only now do users get it)
+          - [ ] Deploy to your own server, then announce
+
+          Closing this issue without adding a \`compat.json\` entry means $mm stays unsupported
+          and no new issue is opened for $ver.
+          EOF
+            gh issue create --title "$title" --body-file body.md
+            issues=$(printf '%s' "$issues" | jq --arg t "$title" '. + [{"title": $t, "state": "OPEN"}]')
+          done
