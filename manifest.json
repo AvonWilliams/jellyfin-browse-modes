@@ -13,8 +13,8 @@
                 "changelog": "Fast People lists (people index and /Discover/People), fixed tile order, Sources list fixes.",
                 "targetAbi": "12.3.0.0",
                 "sourceUrl": "https://github.com/AvonWilliams/jellyfin-browse-modes/releases/download/v12.3.1/browse-modes_12.3.1_12.3.0.zip",
-                "checksum": "PENDING-CI",
-                "timestamp": "PENDING-CI"
+                "checksum": "f3bac53e6fc87ca29543139844ecd9a8",
+                "timestamp": "2026-10-25T14:11:12Z"
             },
             {
                 "version": "12.3.0",
