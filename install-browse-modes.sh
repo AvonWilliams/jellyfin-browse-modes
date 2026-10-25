@@ -7,10 +7,15 @@
 # Downloads are verified (plugin: MD5 from manifest.json, web: SHA-256 from
 # compat.json) before any server file is touched.
 #
-# Ordering: the Jellyfin process is stopped before any plugin/web file is
-# removed or replaced and started again afterwards. A running server holds the
-# plugin DLLs open (especially on FUSE-backed config volumes under Docker),
-# which makes "rm -rf" of the old plugin dir fail with "Directory not empty".
+# Ordering (native): the Jellyfin process is stopped before any plugin/web file
+# is removed or replaced and started again afterwards. A running server holds
+# the plugin DLLs open, which makes "rm -rf" of the old plugin dir fail with
+# "Directory not empty".
+#
+# Docker (--docker NAME): the bundle is copied into the running container and
+# the container is restarted. Nothing about how the container was created
+# changes, so recreating it (image update) discards the web bundle; the next
+# --auto run puts it back when compat.json has an entry for the new version.
 set -euo pipefail
 
 PLUGIN_REPO="AvonWilliams/jellyfin-browse-modes"
@@ -18,7 +23,12 @@ WEB_REPO="AvonWilliams/jellyfin-web"
 
 HOST="${JELLYFIN_HOST:-127.0.0.1}"
 PORT="${JELLYFIN_PORT:-8096}"
+# An explicit address makes Docker mode query that URL from the host instead of
+# asking the container itself.
+ADDR_SET=0
+if [ -n "${JELLYFIN_HOST:-}" ] || [ -n "${JELLYFIN_PORT:-}" ]; then ADDR_SET=1; fi
 CONTAINER=""
+ALL=0
 WEB_ONLY=0
 PLUGIN_ONLY=0
 ACTION="install"
@@ -53,10 +63,14 @@ major.minor (read from the server's public info endpoint). If there is no entry
 for your version, nothing is changed.
 
 Options:
-  --host HOST            Jellyfin server host (default 127.0.0.1)
+  --host HOST            Jellyfin server host (default 127.0.0.1). With --docker
+                         this makes the script query that address from the host
+                         instead of asking the container.
   --port PORT            Jellyfin server port (default 8096)
-  --docker CONTAINER     Install into Docker container CONTAINER instead of a
-                         native install (default: native via systemctl)
+  --docker CONTAINER     Work on Docker container CONTAINER instead of a native
+                         install (default: native via systemctl). The version is
+                         read from inside the container, the bundle is copied
+                         into it and the container is restarted.
   --plugin-only          Install only the plugin, not the web bundle
   --web-only             Install only the web bundle, not the plugin
   --dry-run              Check and download+verify everything, change nothing
@@ -64,29 +78,37 @@ Options:
                          versions, auto-update state and the last run result
   --auto                 Non-interactive run for cron: quiet, logs to
                          /var/lib/browse-modes-updater/updater.log and syslog,
-                         exits 0 when there is nothing to do
+                         exits 0 when there is nothing to do (also when the
+                         Docker container is missing or stopped)
   --enable-auto-update   Install a local copy of this script and add one daily
-                         root cron job that runs it with --auto (native only)
-  --disable-auto-update  Remove that cron job and the local copy
+                         cron job that runs it with --auto. With --docker, one
+                         job per container (the invoking user needs docker access)
+  --disable-auto-update  Remove that cron job (only the one for --docker NAME, or
+                         the native one without it); the local copy goes when
+                         no browse-modes job is left
+  --all                  With --disable-auto-update: remove every browse-modes
+                         job (native and all containers)
   -h, --help             Show this help
 
 Environment: JELLYFIN_HOST and JELLYFIN_PORT set the defaults for --host/--port.
-Installing natively (and enabling/disabling auto-update) needs root. --status
-and --dry-run do not. Docker mode needs the docker CLI and a container using
-the standard /config and /jellyfin layout.
+Installing natively (and enabling/disabling the native auto-update) needs root.
+--status and --dry-run do not. Docker mode needs the docker CLI, permission to
+use it (root or the docker group) and a container running the official Jellyfin
+image layout (web files in /jellyfin/jellyfin-web, data in /config).
 EOF
 }
 
 while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
-    --host) HOST="${2:?--host requires a value}"; shift 2 ;;
-    --port) PORT="${2:?--port requires a value}"; shift 2 ;;
+    --host) HOST="${2:?--host requires a value}"; ADDR_SET=1; shift 2 ;;
+    --port) PORT="${2:?--port requires a value}"; ADDR_SET=1; shift 2 ;;
     --docker) CONTAINER="${2:?--docker requires a value}"; shift 2 ;;
     --web-only) WEB_ONLY=1; shift ;;
     --plugin-only) PLUGIN_ONLY=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     --auto) AUTO=1; shift ;;
+    --all) ALL=1; shift ;;
     --status|--enable-auto-update|--disable-auto-update)
       if [ "$ACTION" != "install" ]; then
         echo "Only one of --status, --enable-auto-update, --disable-auto-update may be given" >&2
@@ -114,17 +136,28 @@ if [ "$AUTO" -eq 1 ] && [ "$ACTION" != "install" ]; then
   echo "--auto cannot be combined with --status or the auto-update switches" >&2
   exit 2
 fi
-if [ "$AUTO" -eq 1 ] && [ -n "$CONTAINER" ]; then
-  echo "--auto is for native installs only (a container recreate wipes the web bundle)" >&2
+if [ -n "$CONTAINER" ] && [[ ! "$CONTAINER" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]; then
+  echo "Invalid container name: ${CONTAINER}" >&2
+  exit 2
+fi
+if [ "$ALL" -eq 1 ] && { [ "$ACTION" != "disable" ] || [ -n "$CONTAINER" ]; }; then
+  echo "--all only goes with --disable-auto-update and not with --docker" >&2
   exit 2
 fi
 
-# Root is needed to write the Jellyfin directories, the crontab and /usr/local.
-# --status and --dry-run only read, and Docker mode talks to the docker daemon.
+# Without root, Docker mode keeps its state and local copy under the user's home.
+if [ -n "$CONTAINER" ] && [ "$(id -u)" -ne 0 ]; then
+  if [ -z "${BM_STATE_DIR:-}" ]; then STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/browse-modes-updater"; fi
+  if [ -z "${BM_LIB_DIR:-}" ]; then LIB_DIR="$HOME/.local/lib/browse-modes"; fi
+fi
+
+# Root is needed to write the native Jellyfin directories, root's crontab and
+# /usr/local. --status and --dry-run only read. Docker mode only needs access to
+# the docker daemon, and --all edits the invoking user's own crontab.
 need_root=0
 case "$ACTION" in
   install) if [ -z "$CONTAINER" ] && [ "$DRY_RUN" -eq 0 ]; then need_root=1; fi ;;
-  enable|disable) need_root=1 ;;
+  enable|disable) if [ -z "$CONTAINER" ] && [ "$ALL" -eq 0 ]; then need_root=1; fi ;;
 esac
 if [ "$need_root" -eq 1 ] && [ "$(id -u)" -ne 0 ] && [ -z "${BM_SKIP_ROOT_CHECK:-}" ]; then
   echo "This needs root; re-run with sudo" >&2
@@ -135,18 +168,23 @@ fi
 
 LOG_FILE="$STATE_DIR/updater.log"
 STATE_FILE="$STATE_DIR/state"
+LOG_TAG=""
+if [ -n "$CONTAINER" ]; then
+  STATE_FILE="$STATE_DIR/state.docker-$CONTAINER"
+  LOG_TAG="[docker:${CONTAINER}] "
+fi
 WRITE_LOG=0
-if [ "$ACTION" = "install" ] && [ "$DRY_RUN" -eq 0 ] && [ -z "$CONTAINER" ]; then WRITE_LOG=1; fi
+if [ "$ACTION" = "install" ] && [ "$DRY_RUN" -eq 0 ]; then WRITE_LOG=1; fi
 
 log_line() {
   if [ "$WRITE_LOG" -eq 1 ] && [ -d "$STATE_DIR" ] && [ -w "$STATE_DIR" ]; then
-    printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG_FILE" 2>/dev/null || true
+    printf '%s %s%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$LOG_TAG" "$*" >> "$LOG_FILE" 2>/dev/null || true
     if [ "$(wc -l < "$LOG_FILE" 2>/dev/null || echo 0)" -gt 1000 ]; then
       tail -n 500 "$LOG_FILE" > "$LOG_FILE.tmp" 2>/dev/null && mv -f "$LOG_FILE.tmp" "$LOG_FILE" || true
     fi
   fi
   if [ "$WRITE_LOG" -eq 1 ] && [ "$AUTO" -eq 1 ] && command -v logger >/dev/null 2>&1; then
-    logger -t browse-modes-updater -- "$*" 2>/dev/null || true
+    logger -t browse-modes-updater -- "${LOG_TAG}$*" 2>/dev/null || true
   fi
 }
 
@@ -204,10 +242,38 @@ version=""
 major_minor=""
 base="http://${HOST}:${PORT}"
 
+# Prints the server's public info JSON. Native and --host/--port runs ask the
+# address from the host. Docker mode otherwise asks the container itself (works
+# for bridge, host and unpublished networking alike), then tries the published
+# port from the host.
+jf_info() {
+  local url="http://127.0.0.1:8096/System/Info/Public" pub
+  if [ -z "$CONTAINER" ] || [ "$ADDR_SET" -eq 1 ]; then
+    curl -fsSL --max-time 15 "${base}/System/Info/Public"
+    return
+  fi
+  docker exec "$CONTAINER" curl -fsS --max-time 10 "$url" 2>/dev/null && return 0
+  docker exec "$CONTAINER" wget -qO- -T 10 "$url" 2>/dev/null && return 0
+  pub=$(dk_published_base) || return 1
+  curl -fsS --max-time 10 "${pub}/System/Info/Public" 2>/dev/null
+}
+
+# Host-side base URL for the container's port 8096: the published port, or
+# 127.0.0.1:8096 for host networking.
+dk_published_base() {
+  local line host
+  if [ "${DK_NETMODE:-}" = "host" ]; then printf 'http://127.0.0.1:8096'; return 0; fi
+  line=$(docker port "$CONTAINER" 8096/tcp 2>/dev/null | head -1) || return 1
+  [ -n "$line" ] || return 1
+  host="${line%:*}"
+  case "$host" in 0.0.0.0|::|"[::]") host="127.0.0.1" ;; esac
+  printf 'http://%s:%s' "$host" "${line##*:}"
+}
+
 # Fills $version / $major_minor from the server's public info endpoint.
 detect_server() {
   local info
-  info=$(curl -fsSL --max-time 15 "${base}/System/Info/Public") || return 1
+  info=$(jf_info) || return 1
   version=$(printf '%s' "$info" | grep -o '"Version"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 \
     | sed 's/.*"\([^"]*\)"$/\1/' || true)
   [ -n "$version" ] || return 2
@@ -219,7 +285,9 @@ detect_server() {
 installed_plugin_version() {
   local meta f
   if [ -n "$CONTAINER" ]; then
-    meta=$(docker exec "$CONTAINER" sh -c 'cat /config/plugins/Browse\ Modes_*/meta.json 2>/dev/null' || true)
+    f=$(dk_plugin_dirs | head -1)
+    [ -n "$f" ] || return 0
+    meta=$(dk_plugin_meta "$f" || true)
     printf '%s' "$meta" | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1
   else
     for f in "$plugin_dir"/Browse\ Modes_*/meta.json; do
@@ -235,7 +303,8 @@ installed_plugin_version() {
 # marker, which is how we notice the bundle is gone.
 installed_web_version() {
   if [ -n "$CONTAINER" ]; then
-    docker exec "$CONTAINER" cat /jellyfin/jellyfin-web/.browse-modes-version 2>/dev/null | head -1 || true
+    [ -n "$DK_WEB" ] || return 0
+    docker exec "$CONTAINER" cat "$DK_WEB/.browse-modes-version" 2>/dev/null | head -1 || true
   else
     head -1 "$web_dir/.browse-modes-version" 2>/dev/null || true
   fi
@@ -275,19 +344,226 @@ raw_cache_buster() {
   case "$RAW_BASE" in https://*) printf '?t=%s' "$(date +%s)" ;; esac
 }
 
+# ---- Docker helpers -----------------------------------------------------------
+
+DK_WEB=""           # web root inside the container
+DK_DATA="/config"   # Jellyfin data dir inside the container
+DK_CFG_HOST=""      # host path of the data dir when it is a bind mount we can write
+DK_WEB_RW=1
+DK_DATA_RW=1
+DK_NETMODE=""
+DK_MOUNTS=""
+
+dk_path_ok() { [[ "$1" =~ ^/[A-Za-z0-9/_.-]+$ ]]; }
+
+# Whether path $1 inside the container is writable according to its mounts and
+# a read-only root filesystem.
+dk_rw_for() {
+  local path="$1" best="" rw="$DK_ROOTFS_RW" kind dest src mrw
+  while IFS=$'\t' read -r kind dest src mrw; do
+    [ "$kind" = "mount" ] || continue
+    if [ "$path" = "$dest" ] || [[ "$path" == "$dest"/* ]]; then
+      if [ "${#dest}" -gt "${#best}" ]; then best="$dest"; rw="$mrw"; fi
+    fi
+  done <<< "$DK_MOUNTS"
+  [ "$rw" = "1" ]
+}
+
+# Reads the container's settings. Returns 13 when the docker daemon is not
+# usable, 10 when there is no such container, 11 when it is not running, 12 when
+# it does not look like a Jellyfin image.
+docker_prepare() {
+  local insp facts key a b c w cand src
+  docker info >/dev/null 2>&1 || return 13
+  insp=$(docker inspect --type container "$CONTAINER" 2>/dev/null) || return 10
+  facts=$(printf '%s' "$insp" | python3 -I -c '
+import json, sys
+d = json.load(sys.stdin)
+c = d[0] if isinstance(d, list) and d else None
+if not isinstance(c, dict):
+    sys.exit(1)
+st, cfg, hc = c.get("State") or {}, c.get("Config") or {}, c.get("HostConfig") or {}
+env = {}
+for e in cfg.get("Env") or []:
+    k, _, v = e.partition("=")
+    env[k] = v
+def one(s):
+    return str(s).replace("\t", " ").replace("\n", " ")
+print("running\t" + ("1" if st.get("Running") else "0"))
+print("rootfs_rw\t" + ("0" if hc.get("ReadonlyRootfs") else "1"))
+print("webdir\t" + one(env.get("JELLYFIN_WEB_DIR", "")))
+print("datadir\t" + one(env.get("JELLYFIN_DATA_DIR", "")))
+print("netmode\t" + one(hc.get("NetworkMode", "")))
+for m in c.get("Mounts") or []:
+    print("mount\t%s\t%s\t%s" % (one(m.get("Destination", "")), one(m.get("Source", "")), "1" if m.get("RW") else "0"))
+    print("kind\t%s\t%s" % (one(m.get("Destination", "")), one(m.get("Type", ""))))
+') || return 10
+  local running=0 envweb="" envdata=""
+  DK_ROOTFS_RW=1; DK_MOUNTS=""; DK_NETMODE=""
+  local kinds=""
+  while IFS=$'\t' read -r key a b c; do
+    case "$key" in
+      running) running="$a" ;;
+      rootfs_rw) DK_ROOTFS_RW="$a" ;;
+      webdir) envweb="$a" ;;
+      datadir) envdata="$a" ;;
+      netmode) DK_NETMODE="$a" ;;
+      mount) DK_MOUNTS="${DK_MOUNTS}mount"$'\t'"$a"$'\t'"$b"$'\t'"$c"$'\n' ;;
+      kind) kinds="${kinds}${a}"$'\t'"${b}"$'\n' ;;
+    esac
+  done <<< "$facts"
+  [ "$running" = "1" ] || return 11
+
+  DK_DATA="/config"
+  if dk_path_ok "$envdata"; then DK_DATA="$envdata"; fi
+  DK_WEB=""
+  for cand in "$envweb" /jellyfin/jellyfin-web /usr/share/jellyfin/web; do
+    dk_path_ok "$cand" || continue
+    if docker exec "$CONTAINER" test -f "$cand/index.html" >/dev/null 2>&1; then DK_WEB="$cand"; break; fi
+  done
+  [ -n "$DK_WEB" ] || return 12
+
+  DK_WEB_RW=0; DK_DATA_RW=0
+  if dk_rw_for "$DK_WEB"; then DK_WEB_RW=1; fi
+  if dk_rw_for "$DK_DATA"; then DK_DATA_RW=1; fi
+
+  # A bind-mounted data dir can be written straight from the host, which keeps
+  # the files owned the way the existing plugin dirs are.
+  DK_CFG_HOST=""
+  src=""
+  while IFS=$'\t' read -r key a b c; do
+    [ "$key" = "mount" ] && [ "$a" = "$DK_DATA" ] || continue
+    src="$b"
+  done <<< "$DK_MOUNTS"
+  w=$(printf '%s' "$kinds" | awk -F'\t' -v d="$DK_DATA" '$1 == d { print $2; exit }')
+  if [ "$w" = "bind" ] && [ -n "$src" ] && [ -d "$src" ]; then
+    if [ "$(id -u)" -eq 0 ]; then
+      DK_CFG_HOST="$src"
+    elif [ "$(stat -c %u "$src" 2>/dev/null)" = "$(id -u)" ] && [ -w "$src" ]; then
+      DK_CFG_HOST="$src"
+    fi
+  fi
+  return 0
+}
+
+# Names of the installed Browse Modes plugin dirs (one per line).
+dk_plugin_dirs() {
+  if [ -n "$DK_CFG_HOST" ]; then
+    ls -1 "$DK_CFG_HOST/plugins" 2>/dev/null | grep '^Browse Modes_' || true
+  else
+    docker exec "$CONTAINER" ls -1 "$DK_DATA/plugins" 2>/dev/null | grep '^Browse Modes_' || true
+  fi
+}
+
+dk_plugin_meta() {
+  if [ -n "$DK_CFG_HOST" ]; then
+    cat "$DK_CFG_HOST/plugins/$1/meta.json" 2>/dev/null
+  else
+    docker exec "$CONTAINER" cat "$DK_DATA/plugins/$1/meta.json" 2>/dev/null
+  fi
+}
+
+dkx() { docker exec -u 0 "$CONTAINER" "$@"; }
+
+# Empties the web root without removing the dir itself (it may be a mount point).
+dk_web_clear() {
+  dkx find "$DK_WEB" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+}
+
+dk_web_put() { # dk_web_put <host dir whose contents are copied>
+  local owner
+  owner=$(dkx stat -c '%u:%g' "$DK_WEB") || return 1
+  docker cp "$1/." "${CONTAINER}:${DK_WEB}/" || return 1
+  dkx chown -R "$owner" "$DK_WEB" || return 1
+}
+
+dk_plugins_remove() {
+  local d
+  while IFS= read -r d; do
+    [ -n "$d" ] || continue
+    if [ -n "$DK_CFG_HOST" ]; then rm -rf "${DK_CFG_HOST:?}/plugins/$d" || return 1
+    else dkx rm -rf "$DK_DATA/plugins/$d" || return 1; fi
+  done < <(dk_plugin_dirs)
+}
+
+dk_plugin_put() { # dk_plugin_put <host dir> <plugin dir name>
+  local owner
+  if [ -n "$DK_CFG_HOST" ]; then
+    mkdir -p "$DK_CFG_HOST/plugins/$2" || return 1
+    cp -a "$1/." "$DK_CFG_HOST/plugins/$2/" || return 1
+    if [ "$(id -u)" -eq 0 ]; then
+      owner=$(stat -c '%u:%g' "$DK_CFG_HOST/plugins" 2>/dev/null || stat -c '%u:%g' "$DK_CFG_HOST")
+      chown -R "$owner" "$DK_CFG_HOST/plugins/$2" || return 1
+    fi
+  else
+    owner=$(dkx stat -c '%u:%g' "$DK_DATA") || return 1
+    dkx mkdir -p "$DK_DATA/plugins/$2" || return 1
+    docker cp "$1/." "${CONTAINER}:${DK_DATA}/plugins/$2/" || return 1
+    dkx chown -R "$owner" "$DK_DATA/plugins/$2" || return 1
+  fi
+}
+
+# Copies the Browse Modes plugin dirs out into host dir $1.
+dk_plugin_backup() {
+  local d
+  mkdir -p "$1" || return 1
+  while IFS= read -r d; do
+    [ -n "$d" ] || continue
+    if [ -n "$DK_CFG_HOST" ]; then cp -a "$DK_CFG_HOST/plugins/$d" "$1/" || return 1
+    else docker cp "${CONTAINER}:${DK_DATA}/plugins/$d" "$1/" || return 1; fi
+  done < <(dk_plugin_dirs)
+}
+
 # ---- status ------------------------------------------------------------------
+
+# Crontab lines (stdin) selected by their marker, which ends the line. Native
+# jobs end in "# browse-modes-auto-update", Docker jobs add " docker:<name>".
+# mode: keep (print matching lines) or drop (print the others). With ALL=1
+# every browse-modes marker matches.
+cron_filter() { # cron_filter keep|drop MARKER
+  awk -v mode="$1" -v m="$2" -v all="$ALL" '
+    { hit = (length($0) >= length(m) && substr($0, length($0) - length(m) + 1) == m)
+      if (all == 1 && $0 ~ /# browse-modes-auto-update( docker:[A-Za-z0-9_.-]+)?$/) hit = 1
+      if ((mode == "drop") != hit) print }'
+}
+
+# This run's marker: per container with --docker, plain for native.
+job_marker() {
+  if [ -n "$CONTAINER" ]; then printf '%s docker:%s' "$CRON_MARKER" "$CONTAINER"; else printf '%s' "$CRON_MARKER"; fi
+}
 
 cron_line() {
   command -v crontab >/dev/null 2>&1 || return 0
-  crontab -l 2>/dev/null | grep -F -- "$CRON_MARKER" | head -1 || true
+  crontab -l 2>/dev/null | cron_filter keep "$(job_marker)" | head -1 || true
+}
+
+# Describes why a container cannot be worked on (return codes of docker_prepare).
+dk_problem() {
+  case "$1" in
+    13) printf 'cannot use the docker daemon (run as root or as a user in the docker group)' ;;
+    10) printf 'container %s not found' "$CONTAINER" ;;
+    11) printf 'container %s is not running' "$CONTAINER" ;;
+    12) printf 'container %s does not look like a Jellyfin image (no jellyfin-web with an index.html found)' "$CONTAINER" ;;
+  esac
 }
 
 do_status() {
-  local rc=0 line ip iw
-  echo "Browse Modes updater status"
-  if detect_server; then
-    echo "  Jellyfin running:     ${version} (${base})"
+  local rc=0 line ip iw others
+  if [ -n "$CONTAINER" ]; then
+    echo "Browse Modes updater status (Docker container ${CONTAINER})"
+    command -v docker >/dev/null 2>&1 || { echo "docker not found" >&2; exit 1; }
+    docker_prepare || rc=$?
+    if [ "$rc" -ne 0 ]; then
+      echo "  Container:            $(dk_problem "$rc")"
+    elif [ "$ADDR_SET" -eq 0 ]; then
+      base="container ${CONTAINER}"
+    fi
   else
+    echo "Browse Modes updater status"
+  fi
+  if [ "$rc" -eq 0 ] && detect_server; then
+    echo "  Jellyfin running:     ${version} (${base})"
+  elif [ "$rc" -eq 0 ]; then
     echo "  Jellyfin running:     unreachable at ${base}"
   fi
   if [ -n "$major_minor" ]; then
@@ -308,6 +584,14 @@ do_status() {
   else
     echo "  Auto-update:          disabled"
   fi
+  others=""
+  if command -v crontab >/dev/null 2>&1; then
+    others=$(crontab -l 2>/dev/null | ALL=1 cron_filter keep x | cron_filter drop "$(job_marker)" || true)
+  fi
+  if [ -n "$others" ]; then
+    echo "  Other browse-modes jobs in this crontab:"
+    printf '%s\n' "$others" | sed 's/^/    cron: /'
+  fi
   if [ -n "$(state_get last_run)" ]; then
     echo "  Last run:             $(state_get last_run) - $(state_get last_result): $(state_get last_message)"
   else
@@ -318,21 +602,20 @@ do_status() {
 # ---- auto-update switch ------------------------------------------------------
 
 do_enable() {
-  local self src_sum min hour existing args new_line current others
-  if [ -n "$CONTAINER" ]; then
-    cat >&2 <<'EOF'
-Auto-update is for native installs only. In Docker, recreating the container
-(an image pull or "docker compose up") discards a web bundle copied into it, so
-an updater inside or beside the container cannot keep the bundle in place.
-Bind-mount the bundle over the web root instead (see the README) and re-run
-this script manually with --docker when you update.
-EOF
-    exit 2
-  fi
+  local self src_sum min hour existing args new_line current others marker cron_path dockerbin rc=0
   command -v crontab >/dev/null 2>&1 || { echo "crontab not found; install cron first" >&2; exit 1; }
   for cmd in curl unzip python3 flock md5sum sha256sum; do
     command -v "$cmd" >/dev/null 2>&1 || echo "Warning: required command not found: $cmd (the updater will fail without it)" >&2
   done
+  if [ -n "$CONTAINER" ]; then
+    dockerbin=$(command -v docker) || { echo "docker not found (required by --docker)" >&2; exit 1; }
+    docker_prepare || rc=$?
+    case "$rc" in
+      0) ;;
+      11) echo "Note: $(dk_problem 11); the job does nothing until it is running." >&2 ;;
+      *) echo "Cannot enable auto-update: $(dk_problem "$rc")" >&2; exit 1 ;;
+    esac
+  fi
 
   self="${BASH_SOURCE[0]}"
   if [ ! -f "$self" ] || [ ! -r "$self" ]; then
@@ -367,62 +650,91 @@ EOF
   # Options baked into the cron line: only non-default host/port, validated
   # above so nothing can break out of the line.
   args="--auto"
+  if [ -n "$CONTAINER" ]; then args="$args --docker $CONTAINER"; fi
   if [ "$HOST" != "127.0.0.1" ]; then args="$args --host $HOST"; fi
   if [ "$PORT" != "8096" ]; then args="$args --port $PORT"; fi
 
+  # cron runs with a minimal PATH that often lacks docker's directory.
+  cron_path=""
+  if [ -n "$CONTAINER" ]; then
+    cron_path="PATH=$(dirname "$dockerbin"):/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin "
+    if [[ ! "$cron_path" =~ ^PATH=[A-Za-z0-9/_.:-]+\ $ ]]; then
+      echo "Refusing to put an unusual docker path into a cron line: ${dockerbin}" >&2
+      exit 1
+    fi
+  fi
+
+  marker=$(job_marker)
   current=$(crontab -l 2>/dev/null || true)
-  existing=$(printf '%s\n' "$current" | grep -F -- "$CRON_MARKER" | head -1 || true)
+  existing=$(printf '%s\n' "$current" | cron_filter keep "$marker" | head -1 || true)
   if [[ "$existing" =~ ^([0-9]+)[[:space:]]+([0-9]+)[[:space:]] ]]; then
     # Keep the schedule picked the first time so re-running does not churn it.
     min="${BASH_REMATCH[1]}"; hour="${BASH_REMATCH[2]}"
   else
     min=$((RANDOM % 60)); hour=$((2 + RANDOM % 4))
   fi
-  new_line="$min $hour * * * $LIB_DIR/updater.sh $args $CRON_MARKER"
+  new_line="$min $hour * * * ${cron_path}$LIB_DIR/updater.sh $args $marker"
 
-  if [ "$(printf '%s\n' "$current" | grep -cF -- "$CRON_MARKER" || true)" = "1" ] && [ "$existing" = "$new_line" ]; then
+  if [ "$(printf '%s\n' "$current" | cron_filter keep "$marker" | grep -c . || true)" = "1" ] && [ "$existing" = "$new_line" ]; then
     echo "Auto-update was already enabled; nothing added to the crontab."
   else
-    others=$(printf '%s\n' "$current" | grep -vF -- "$CRON_MARKER" || true)
+    others=$(printf '%s\n' "$current" | cron_filter drop "$marker" || true)
     if [ -n "$others" ]; then
       printf '%s\n%s\n' "$others" "$new_line" | crontab -
     else
       printf '%s\n' "$new_line" | crontab -
     fi
-    echo "Added this line to root's crontab:"
+    echo "Added this line to the crontab of $(id -un):"
   fi
   echo "  $new_line"
   cat <<EOF
 
-Installed local copy: ${LIB_DIR}/updater.sh (root-owned, sha256 ${src_sum})
+Installed local copy: ${LIB_DIR}/updater.sh (owned by $(id -un), sha256 ${src_sum})
 It runs once a day, between 02:00 and 05:59, and only changes anything when
 compat.json lists a tested release for your Jellyfin version. Results go to
 ${LOG_FILE} and syslog.
+EOF
+  if [ -n "$CONTAINER" ]; then
+    cat <<EOF
 
-To check on it:   sudo bash ${LIB_DIR}/updater.sh --status
-To remove it:     sudo bash ${LIB_DIR}/updater.sh --disable-auto-update
-Or by hand:       sudo crontab -l | grep -vF '${CRON_MARKER}' | sudo crontab -
-                  sudo rm -rf ${LIB_DIR}
+If the container is recreated (image update, Watchtower) the web bundle is gone
+until the next run puts it back, provided compat.json has an entry for the new
+Jellyfin version. The plugin lives in the config volume and stays.
+EOF
+  fi
+  cat <<EOF
+
+To check on it:   bash ${LIB_DIR}/updater.sh --status${CONTAINER:+ --docker $CONTAINER}
+To remove it:     bash ${LIB_DIR}/updater.sh --disable-auto-update${CONTAINER:+ --docker $CONTAINER}
+Or by hand:       crontab -l | grep -vF '${marker}' | crontab -
 EOF
 }
 
 do_disable() {
-  local current others had
+  local current others had marker remaining
   command -v crontab >/dev/null 2>&1 || { echo "crontab not found" >&2; exit 1; }
+  marker=$(job_marker)
   current=$(crontab -l 2>/dev/null || true)
-  had=$(printf '%s\n' "$current" | grep -cF -- "$CRON_MARKER" || true)
+  had=$(printf '%s\n' "$current" | cron_filter keep "$marker" | grep -c . || true)
+  others="$current"
   if [ "$had" != "0" ]; then
-    others=$(printf '%s\n' "$current" | grep -vF -- "$CRON_MARKER" || true)
+    others=$(printf '%s\n' "$current" | cron_filter drop "$marker" || true)
     if [ -n "$others" ]; then
       printf '%s\n' "$others" | crontab -
     else
       printf '' | crontab -
     fi
-    echo "Removed the auto-update line from root's crontab."
+    if [ "$ALL" -eq 1 ]; then echo "Removed every browse-modes auto-update line from the crontab of $(id -un)."
+    elif [ -n "$CONTAINER" ]; then echo "Removed the auto-update line for container ${CONTAINER} from the crontab of $(id -un)."
+    else echo "Removed the auto-update line from the crontab of $(id -un)."; fi
   else
-    echo "No auto-update line found in root's crontab."
+    echo "No matching auto-update line found in the crontab of $(id -un)."
   fi
-  if [ -e "$LIB_DIR/updater.sh" ]; then
+  # The local copy is shared by all jobs; it goes with the last one.
+  remaining=$(printf '%s\n' "$others" | ALL=1 cron_filter keep x | grep -c . || true)
+  if [ "$remaining" != "0" ]; then
+    echo "Kept ${LIB_DIR}/updater.sh: ${remaining} other browse-modes job(s) still use it."
+  elif [ -e "$LIB_DIR/updater.sh" ]; then
     rm -f "$LIB_DIR/updater.sh"
     rmdir "$LIB_DIR" 2>/dev/null || true
     echo "Removed ${LIB_DIR}/updater.sh."
@@ -447,10 +759,10 @@ if [ -n "$CONTAINER" ] && ! command -v docker >/dev/null 2>&1; then
 fi
 
 # One run at a time (cron vs. a manual run).
-if [ "$DRY_RUN" -eq 0 ] && [ -z "$CONTAINER" ]; then
+if [ "$DRY_RUN" -eq 0 ]; then
   mkdir -p "$STATE_DIR"
   command -v flock >/dev/null 2>&1 || { echo "Required command not found: flock" >&2; exit 1; }
-  exec 9>"$STATE_DIR/lock"
+  exec 9>"$STATE_DIR/lock${CONTAINER:+.docker-$CONTAINER}"
   if ! flock -n 9; then
     log "Another Browse Modes update is already running; exiting."
     exit 0
@@ -466,24 +778,14 @@ start_server() {
   if [ "$stopped" -ne 1 ]; then
     return 0
   fi
-  if [ -n "$CONTAINER" ]; then
-    log "Starting container ${CONTAINER}"
-    docker start "$CONTAINER" >/dev/null
-  else
-    log "Starting Jellyfin via systemctl"
-    systemctl start jellyfin
-  fi
+  log "Starting Jellyfin via systemctl"
+  systemctl start jellyfin
   stopped=0
 }
 
 stop_server() {
-  if [ -n "$CONTAINER" ]; then
-    log "Stopping container ${CONTAINER}"
-    docker stop "$CONTAINER" >/dev/null
-  else
-    log "Stopping Jellyfin via systemctl"
-    systemctl stop jellyfin
-  fi
+  log "Stopping Jellyfin via systemctl"
+  systemctl stop jellyfin
   stopped=1
 }
 
@@ -498,7 +800,7 @@ trap cleanup EXIT
 health_check() {
   local i
   for i in $(seq 1 "$HEALTH_TRIES"); do
-    if curl -fsS --max-time 5 "${base}/System/Info/Public" 2>/dev/null | grep -q '"Version"'; then
+    if jf_info 2>/dev/null | grep -q '"Version"'; then
       return 0
     fi
     sleep "$HEALTH_INTERVAL"
@@ -507,11 +809,28 @@ health_check() {
 }
 
 # ---- decide what applies ----
+if [ -n "$CONTAINER" ]; then
+  rc=0; docker_prepare || rc=$?
+  case "$rc" in
+    0) ;;
+    10|11)
+      msg="$(dk_problem "$rc"); nothing changed"
+      if [ "$AUTO" -eq 1 ]; then
+        log "$msg"
+        record_run skipped "$msg"
+        exit 0
+      fi
+      err "$msg"
+      exit 1 ;;
+    *) die "$(dk_problem "$rc")" ;;
+  esac
+  if [ "$ADDR_SET" -eq 0 ]; then base="container ${CONTAINER}"; fi
+fi
 rc=0; detect_server || rc=$?
 case "$rc" in
   0) ;;
   1) die "Could not reach Jellyfin server at ${base}" ;;
-  *) die "Could not determine the Jellyfin version from ${base}/System/Info/Public" ;;
+  *) die "Could not determine the Jellyfin version from ${base} (/System/Info/Public)" ;;
 esac
 log "Detected Jellyfin ${version}"
 
@@ -554,9 +873,27 @@ if [ "$PLUGIN_ONLY" -eq 0 ] && [ "$C_WEB" != "-" ]; then
   fi
 fi
 
+# Docker: a read-only mount or root filesystem cannot be changed by copying.
+ro_skipped=0
+if [ -n "$CONTAINER" ]; then
+  if [ "$web_update" -eq 1 ] && [ "$DK_WEB_RW" -eq 0 ]; then
+    log "The web root ${DK_WEB} in ${CONTAINER} is read-only (read-only mount or root filesystem); leaving the web bundle alone."
+    web_update=0; ro_skipped=1
+  fi
+  if [ "$plugin_update" -eq 1 ] && [ "$DK_DATA_RW" -eq 0 ]; then
+    log "The data dir ${DK_DATA} in ${CONTAINER} is read-only; leaving the plugin alone."
+    plugin_update=0; ro_skipped=1
+  fi
+fi
+
 if [ "$plugin_update" -eq 0 ] && [ "$web_update" -eq 0 ]; then
-  log "Already up to date; nothing to install."
-  record_run noop "Already up to date (Jellyfin ${version})"
+  if [ "$ro_skipped" -eq 1 ]; then
+    log "Nothing to install: the parts that need updating are read-only in the container."
+    record_run skipped "Read-only container paths; nothing changed (Jellyfin ${version})"
+  else
+    log "Already up to date; nothing to install."
+    record_run noop "Already up to date (Jellyfin ${version})"
+  fi
   exit 0
 fi
 
@@ -620,7 +957,7 @@ fi
 if [ "$DRY_RUN" -eq 1 ]; then
   echo "Dry run: verified downloads for Jellyfin ${version}. Would install:"
   if [ -n "$CONTAINER" ]; then
-    dest_plugin="container ${CONTAINER}:/config/plugins"; dest_web="container ${CONTAINER}:/jellyfin/jellyfin-web"
+    dest_plugin="container ${CONTAINER}:${DK_DATA}/plugins"; dest_web="container ${CONTAINER}:${DK_WEB}"
   else
     dest_plugin="$plugin_dir"; dest_web="$web_dir"
   fi
@@ -630,40 +967,109 @@ if [ "$DRY_RUN" -eq 1 ]; then
   exit 0
 fi
 
-# ---- Docker (manual installs only) ----
+installed_msg() {
+  local m="Installed"
+  if [ "$plugin_update" -eq 1 ]; then m="$m plugin ${C_PLUGIN}"; fi
+  if [ "$web_update" -eq 1 ]; then m="$m web ${C_WEB}"; fi
+  printf '%s for Jellyfin %s' "$m" "$version"
+}
+
+# Keeps the newest KEEP_BACKUPS backup dirs under $backup_root.
+prune_backups() {
+  local d
+  # shellcheck disable=SC2012
+  { ls -1dt "$backup_root"/[0-9]* 2>/dev/null || true; } | tail -n +$((KEEP_BACKUPS + 1)) | while read -r d; do
+    rm -rf "$d"
+  done
+}
+
+# ---- Docker: back up, copy into the running container, restart, health-check,
+# roll back on failure ----
 if [ -n "$CONTAINER" ]; then
-  stop_server
-  if [ "$plugin_update" -eq 1 ]; then
-    docker exec "$CONTAINER" mkdir -p /config/plugins
-    # Plugin dir name contains a space; escape it for the container's sh.
-    docker exec "$CONTAINER" sh -c 'rm -rf /config/plugins/Browse\ Modes_*'
-    docker cp "$tmp/plugin_stage" "$CONTAINER:/config/plugins/${pdir}"
-    # docker cp preserves the host uid, which may not match the container's jellyfin
-    # user (uid 1000, no named user). Chown to the owner of /config so meta.json stays writable.
-    jf_owner=$(docker exec "$CONTAINER" sh -c 'stat -c "%u:%g" /config')
-    docker exec "$CONTAINER" chown -R "$jf_owner" "/config/plugins/${pdir}"
-    log "Installed plugin to container ${CONTAINER}:/config/plugins/${pdir}"
+  backup_root="$STATE_DIR/backups/docker-$CONTAINER"
+  backup="$backup_root/$(date +%Y%m%d%H%M%S)"
+
+  apply_docker() {
+    local d
+    mkdir -p "$backup" || return 1
+    if [ "$web_update" -eq 1 ]; then
+      mkdir -p "$backup/web" || return 1
+      docker cp "${CONTAINER}:${DK_WEB}/." "$backup/web" || return 1
+    fi
+    if [ "$plugin_update" -eq 1 ]; then
+      dk_plugin_backup "$backup/plugin" || return 1
+    fi
+
+    if [ "$plugin_update" -eq 1 ]; then
+      dk_plugins_remove || return 1
+      dk_plugin_put "$tmp/plugin_stage" "$pdir" || return 1
+      log "Installed plugin ${C_PLUGIN} to ${DK_DATA}/plugins/${pdir} in container ${CONTAINER}$([ -n "$DK_CFG_HOST" ] && printf ' (via %s)' "$DK_CFG_HOST")"
+    fi
+    if [ "$web_update" -eq 1 ]; then
+      dk_web_clear || return 1
+      dk_web_put "$tmp/web_stage" || return 1
+      log "Installed web bundle ${C_WEB} to ${DK_WEB} in container ${CONTAINER}"
+    fi
+  }
+
+  # Puts back what the backup holds for the parts this run replaced.
+  restore_docker() {
+    local d
+    if [ "$plugin_update" -eq 1 ]; then
+      dk_plugins_remove || return 1
+      for d in "$backup/plugin"/*; do
+        [ -d "$d" ] || continue
+        dk_plugin_put "$d" "$(basename "$d")" || return 1
+      done
+    fi
+    if [ "$web_update" -eq 1 ]; then
+      dk_web_clear || return 1
+      dk_web_put "$backup/web" || return 1
+    fi
+  }
+
+  restart_container() {
+    log "Restarting container ${CONTAINER}"
+    docker restart "$CONTAINER" >/dev/null
+  }
+
+  if ! apply_docker; then
+    err "Applying the update failed; restoring the previous files from ${backup}"
+    if restore_docker; then
+      msg_tail="restored from"
+    else
+      msg_tail="restore from"
+    fi
+    die "Update failed (${msg_tail} the backup in ${backup}); the container was not restarted"
   fi
-  if [ "$web_update" -eq 1 ]; then
-    ts=$(date +%Y%m%d%H%M%S)
-    docker exec "$CONTAINER" sh -c "mkdir -p /jellyfin; if [ -d /jellyfin/jellyfin-web ]; then mv /jellyfin/jellyfin-web /jellyfin/jellyfin-web.bak.${ts}; fi"
-    docker cp "$tmp/web_stage" "$CONTAINER:/jellyfin/jellyfin-web"
-    jf_owner=$(docker exec "$CONTAINER" sh -c 'stat -c "%u:%g" /config')
-    docker exec "$CONTAINER" chown -R "$jf_owner" "/jellyfin/jellyfin-web"
-    log "Installed web bundle to container ${CONTAINER}:/jellyfin/jellyfin-web (backup: jellyfin-web.bak.${ts})"
+
+  if restart_container && health_check; then
+    log "Jellyfin in ${CONTAINER} is healthy after the update."
+    prune_backups
+    msg=$(installed_msg)
+    log "$msg"
+    record_run ok "$msg"
+    log "Done. (backup of the previous files: ${backup})"
+    exit 0
   fi
-  start_server
-  if health_check; then
-    log "Server is back up. Done."
+
+  err "Jellyfin did not come back after the update; rolling back from ${backup}"
+  restored=0
+  if restore_docker; then restored=1; fi
+  restart_container || true
+  if [ "$restored" -eq 1 ] && health_check; then
+    msg="Update failed health check; rolled back to the previous files (backup kept in ${backup})"
   else
-    err "Server did not answer after the update. Check 'docker logs ${CONTAINER}'; the previous web bundle is in /jellyfin/jellyfin-web.bak.*"
-    exit 1
+    msg="Update failed health check and Jellyfin is not answering after the rollback; check 'docker logs ${CONTAINER}' (backup in ${backup})"
   fi
-  exit 0
+  err "$msg"
+  record_run rolled-back "$msg"
+  exit 1
 fi
 
 # ---- native install: back up, replace, health-check, roll back on failure ----
-backup="$STATE_DIR/backups/$(date +%Y%m%d%H%M%S)"
+backup_root="$STATE_DIR/backups"
+backup="$backup_root/$(date +%Y%m%d%H%M%S)"
 had_web=0
 
 apply_native() {
@@ -707,14 +1113,6 @@ restore_native() {
   fi
 }
 
-prune_backups() {
-  local d
-  # shellcheck disable=SC2012
-  { ls -1dt "$STATE_DIR"/backups/[0-9]* 2>/dev/null || true; } | tail -n +$((KEEP_BACKUPS + 1)) | while read -r d; do
-    rm -rf "$d"
-  done
-}
-
 stop_server
 if ! apply_native; then
   err "Applying the update failed; restoring the previous files from ${backup}"
@@ -727,7 +1125,7 @@ start_server
 if health_check; then
   log "Jellyfin is healthy after the update."
   prune_backups
-  msg="Installed${plugin_update:+ plugin ${C_PLUGIN}}${web_update:+ web ${C_WEB}} for Jellyfin ${version}"
+  msg=$(installed_msg)
   log "$msg"
   record_run ok "$msg"
   log "Done. (backup of the previous files: ${backup})"

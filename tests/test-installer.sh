@@ -238,13 +238,7 @@ run_installer --enable-auto-update
 run_installer --disable-auto-update
 check "enable then disable on an empty crontab leaves it empty" test ! -s "$work/crontab.txt"
 
-# Refusals.
-run_installer --docker somecontainer --enable-auto-update; rc=$?
-check "--docker refuses --enable-auto-update" test "$rc" -ne 0
-check "--docker refusal explains the bind-mount alternative" contains "$work/out" "Bind-mount"
-check "--docker refusal added no cron line" test ! -s "$work/crontab.txt"
-run_installer --auto --docker somecontainer; rc=$?
-check "--auto with --docker is refused" test "$rc" -ne 0
+# Refusals. (Docker auto-update is covered by tests/test-docker.sh.)
 PATH="$work/bin:$PATH" BM_LIB_DIR="$work/lib" BM_STATE_DIR="$work/state" BM_SKIP_ROOT_CHECK=1 \
   bash -s -- --enable-auto-update < "$script" > "$work/out" 2>&1; rc=$?
 check "enable refuses when the script is piped from stdin" test "$rc" -ne 0
