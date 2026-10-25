@@ -921,6 +921,13 @@ if [ -n "$CONTAINER" ]; then
   esac
 fi
 rc=0; detect_server || rc=$?
+if [ -n "$CONTAINER" ] && [ "$rc" -ne 0 ]; then
+  # A container that was just (re)started can take a while to answer.
+  for _ in $(seq 2 "$HEALTH_TRIES"); do
+    sleep "$HEALTH_INTERVAL"
+    rc=0; detect_server && break || rc=$?
+  done
+fi
 case "$rc" in
   0) ;;
   1) die "Could not reach Jellyfin server at ${base}" ;;

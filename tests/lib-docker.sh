@@ -64,6 +64,7 @@ case "$cmd" in
     [ -f "$W/ctr/$1/inspect.json" ] || { echo "Error: No such container: $1" >&2; exit 1; }
     cat "$W/ctr/$1/inspect.json" ;;
   port)
+    [ -e "$W/jf_down" ] && exit 1
     echo "127.0.0.1:$(cat "$W/port")" ;;
   restart)
     exit 0 ;;
@@ -83,6 +84,7 @@ case "$cmd" in
     fs="$W/ctr/$name/fs"
     case "$1" in
       curl|wget)
+        if [ -e "$W/jf_down" ]; then exit 7; fi
         if [ -e "$W/${1}_missing" ]; then echo "exec: $1: not found" >&2; exit 127; fi
         url=""; for a in "$@"; do case "$a" in http://*) url="$a" ;; esac; done
         path="/${url#http://127.0.0.1:8096/}"
@@ -163,7 +165,7 @@ cfgdir() { # cfgdir <name>: where the container's /config really lives
 }
 webdir() { printf '%s' "$work/ctr/$1/fs$(cat "$work/ctr/$1/webpath" 2>/dev/null || echo /jellyfin/jellyfin-web)"; }
 restarts() { grep -c '^restart' "$work/docker.log" 2>/dev/null || true; }
-reset_state() { rm -rf "${work:?}/state" "${work:?}/lib"; rm -f "$work/docker.log"; : > "$work/docker.log"; rm -f "$work"/{docker_denied,curl_missing,wget_missing,cp_fail}; }
+reset_state() { rm -rf "${work:?}/state" "${work:?}/lib"; rm -f "$work/docker.log"; : > "$work/docker.log"; rm -f "$work"/{docker_denied,curl_missing,wget_missing,cp_fail,jf_down}; }
 
 # run_dk <args...>: runs the script against the scratch tree, output in $work/out.
 run_dk() {

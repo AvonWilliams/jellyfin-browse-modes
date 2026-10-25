@@ -200,6 +200,14 @@ check "docker permission problem is an error" test "$rc" -ne 0
 check "docker permission problem is explained" contains "$work/out" "docker group"
 rm -f "$work/docker_denied"
 
+# Container is up but Jellyfin does not answer.
+new_ctr jf; reset_state
+touch "$work/jf_down"
+run_dk --auto --docker jf; rc=$?
+check "unreachable Jellyfin in a running container is an error" test "$rc" -ne 0
+check "unreachable Jellyfin: web untouched, no restart" bash -c "grep -q STOCK '$(webdir jf)/index.html' && [ '$(restarts)' = 0 ]"
+rm -f "$work/jf_down"
+
 # Read-only web root (for example a user's own bind mount): plugin still installs.
 new_ctr rowc bind 1; reset_state
 run_dk --docker rowc; rc=$?
