@@ -3,9 +3,29 @@
 Versions cover the project as a whole — plugin, web client and Android TV client are released
 together under one number, even when only one of them changed. Each entry says which parts moved.
 
-## Unreleased — installer fixes
+## 12.3.1 — Fixed tile order
 
-The installer script is served from `main`; these changes need no plugin or web release.
+**Plugin** and **web client**.
+
+- Browse Modes tiles are no longer configurable. Every category is always shown, in one fixed
+  order (Categories, Mood & Themes, People, Discover after the primary tiles). The "Browse mode
+  tiles" section is removed from the plugin's Display settings page.
+- The web client no longer requests `/Discover/TileLayout`, so a stale or hand-edited saved
+  order can no longer hide or reshuffle tiles.
+- Compatibility: the `BrowseModeOrder` setting is deprecated and ignored. It is still read from
+  older saved configurations without error and left as it is when settings are saved, and
+  `/Discover/TileLayout` still exists but always returns an empty list, so older web builds fall
+  back to the full built-in order.
+- Android TV is unchanged (it never read the tile layout).
+- Fixed: the snapshot Sources list grew on every settings save and server restart (9 entries
+  became 18, 27, ...), so lists were fetched repeatedly. The saved list is now loaded as-is, and
+  lists already duplicated are collapsed on load (an entry you changed is kept over an untouched
+  default). The saved XML format is unchanged.
+- Fixed: saving the Sources tab merged rows by source name, so a source's second list (for example
+  IMDb Top Rated, Trakt Top Rated) and any extra entries were dropped. Every configured list now
+  has its own row and is saved.
+
+**Installer** (`install-browse-modes.sh`, served from `main`).
 
 - The old plugin and web directories are now **renamed into a `.bm-trash` folder (beside the plugins
   or web directory, same filesystem) instead of being deleted first**, for native and Docker

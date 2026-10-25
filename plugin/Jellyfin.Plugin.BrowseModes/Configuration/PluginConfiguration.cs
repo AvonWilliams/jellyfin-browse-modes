@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
+using System.Xml.Serialization;
 using MediaBrowser.Model.Plugins;
 
 namespace Jellyfin.Plugin.BrowseModes.Configuration;
@@ -78,7 +80,46 @@ public class PluginConfiguration : BasePluginConfiguration
     /// lists — a trending list and a top-rated list). Fetched and refreshed at runtime by a
     /// scheduled task.
     /// </remarks>
-    public List<SourceListConfig> Sources { get; set; } = new List<SourceListConfig>
+    [XmlIgnore]
+    public List<SourceListConfig> Sources
+    {
+        get => _sources;
+        set => _sources = Normalize(value);
+    }
+
+    /// <summary>
+    /// Gets or sets <see cref="Sources"/> as the array XmlSerializer reads and writes.
+    /// </summary>
+    /// <remarks>
+    /// The server persists this class with XmlSerializer, which appends deserialised items to a
+    /// list property that already holds values. With the defaults as the list's initial value
+    /// every load would add the saved entries on top of them, growing the list on each save and
+    /// restart. An array property is replaced as a whole, so the saved list wins and the
+    /// defaults apply only when the file has no Sources element. The XML shape is unchanged
+    /// (<c>Sources/SourceListConfig</c>), and this member is hidden from JSON, where
+    /// <see cref="Sources"/> is the member the settings page uses.
+    /// </remarks>
+    [XmlArray("Sources")]
+    [JsonIgnore]
+    public SourceListConfig[] SourcesXml
+    {
+        get => _sources.ToArray();
+        set => Sources = value is null ? new List<SourceListConfig>() : new List<SourceListConfig>(value);
+    }
+
+    /// <summary>
+    /// Gets or sets the browse-mode tile keys. Deprecated and ignored.
+    /// </summary>
+    /// <remarks>
+    /// Clients now always show every category in one fixed order, so this list has no effect and
+    /// the settings page no longer edits it. The property is kept only so configuration files
+    /// saved by earlier versions still load, and is preserved untouched when settings are saved.
+    /// </remarks>
+    public List<string> BrowseModeOrder { get; set; } = new List<string>();
+
+    private List<SourceListConfig> _sources = DefaultSources();
+
+    private static List<SourceListConfig> DefaultSources() => new List<SourceListConfig>
     {
         new SourceListConfig { Key = "imdb", Kind = "trending" },
         new SourceListConfig { Key = "imdb", Kind = "toprated" },
@@ -92,14 +133,44 @@ public class PluginConfiguration : BasePluginConfiguration
     };
 
     /// <summary>
-    /// Gets or sets the browse-mode tile keys in display order. Keys not listed are hidden.
+    /// Collapses entries that repeat the same key and kind into one, in first-seen order. Lists
+    /// that earlier versions already saved with the default entries repeated are healed here.
+    /// Where copies differ the one the user changed (a custom URL, disabled, or scraping allowed)
+    /// is kept over an untouched default; otherwise the first copy wins.
     /// </summary>
-    /// <remarks>
-    /// The keys are the client's <c>BrowseMode</c> enum values. An empty list means the client
-    /// should use its built-in order and visibility. The plugin stores the list but does not
-    /// interpret it; the web client reads it from <c>/Discover/TileLayout</c>.
-    /// </remarks>
-    public List<string> BrowseModeOrder { get; set; } = new List<string>();
+    private static List<SourceListConfig> Normalize(List<SourceListConfig>? value)
+    {
+        var result = new List<SourceListConfig>();
+        if (value is null)
+        {
+            return result;
+        }
+
+        var positions = new Dictionary<(string Key, string Kind), int>();
+        foreach (var entry in value)
+        {
+            if (entry is null)
+            {
+                continue;
+            }
+
+            var id = ((entry.Key ?? string.Empty).ToLowerInvariant(), (entry.Kind ?? string.Empty).ToLowerInvariant());
+            if (!positions.TryGetValue(id, out var index))
+            {
+                positions[id] = result.Count;
+                result.Add(entry);
+            }
+            else if (Customisation(entry) > Customisation(result[index]))
+            {
+                result[index] = entry;
+            }
+        }
+
+        return result;
+    }
+
+    private static int Customisation(SourceListConfig entry) =>
+        (string.IsNullOrWhiteSpace(entry.Url) ? 0 : 1) + (entry.Enabled ? 0 : 1) + (entry.AllowScrape ? 1 : 0);
 }
 
 /// <summary>
