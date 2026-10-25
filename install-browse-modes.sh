@@ -23,12 +23,14 @@ WEB_REPO="AvonWilliams/jellyfin-web"
 
 HOST="${JELLYFIN_HOST:-127.0.0.1}"
 PORT="${JELLYFIN_PORT:-8096}"
-# An explicit address makes Docker mode query that URL from the host instead of
-# asking the container itself.
+# --host/--port given on the command line: Docker targets are then queried at
+# that URL from the host instead of asking the container itself, and no server
+# discovery is done.
 ADDR_SET=0
-if [ -n "${JELLYFIN_HOST:-}" ] || [ -n "${JELLYFIN_PORT:-}" ]; then ADDR_SET=1; fi
-CONTAINER=""
+CONTAINER=""       # set by set_target for the target being worked on
+TARGETS=()         # explicit targets: "native" or "docker:NAME"
 ALL=0
+YES=0
 WEB_ONLY=0
 PLUGIN_ONLY=0
 ACTION="install"
@@ -57,44 +59,62 @@ usage() {
   cat <<'EOF'
 Usage: install-browse-modes.sh [options]
 
-Installs the Browse Modes plugin and web bundle on a Jellyfin server. The
-release to install is looked up in compat.json for the running Jellyfin
-major.minor (read from the server's public info endpoint). If there is no entry
-for your version, nothing is changed.
+Installs the Browse Modes plugin and web bundle on Jellyfin servers. The
+release to install is looked up in compat.json for each server's Jellyfin
+major.minor (read from its public info endpoint). If there is no entry for the
+version, nothing is changed on that server.
 
-Options:
-  --host HOST            Jellyfin server host (default 127.0.0.1). With --docker
-                         this makes the script query that address from the host
-                         instead of asking the container.
+With no target given, the script looks for Jellyfin on this machine (a native
+install and Docker containers, running or stopped), lists what it found, lets
+you pick one or several, shows the plan and asks before changing anything.
+Questions are read from the terminal, so this also works through "curl | bash".
+
+Choosing servers without questions:
+  --target native|docker:NAME  Work on this target; repeatable
+  --native                     Same as --target native
+  --docker CONTAINER           Same as --target docker:CONTAINER
+  --all                        Every discovered server that has a tested release
+  -y, --yes                    Accept the defaults without asking (all discovered
+                               servers with a tested release); no auto-update
+                               question is asked
+
+Other options:
+  --host HOST            Jellyfin server host (default 127.0.0.1). With a Docker
+                         target this makes the script query that address from
+                         the host instead of asking the container.
   --port PORT            Jellyfin server port (default 8096)
-  --docker CONTAINER     Work on Docker container CONTAINER instead of a native
-                         install (default: native via systemctl). The version is
-                         read from inside the container, the bundle is copied
-                         into it and the container is restarted.
   --plugin-only          Install only the plugin, not the web bundle
   --web-only             Install only the web bundle, not the plugin
-  --dry-run              Check and download+verify everything, change nothing
+  --dry-run              Show the plan, check and download+verify everything,
+                         change nothing
   --status               Show Jellyfin version, compat entry, installed
                          versions, auto-update state and the last run result
+                         for one target
   --auto                 Non-interactive run for cron: quiet, logs to
                          /var/lib/browse-modes-updater/updater.log and syslog,
                          exits 0 when there is nothing to do (also when the
-                         Docker container is missing or stopped)
+                         Docker container is missing or stopped). Never asks.
   --enable-auto-update   Install a local copy of this script and add one daily
-                         cron job that runs it with --auto. With --docker, one
-                         job per container (the invoking user needs docker access)
-  --disable-auto-update  Remove that cron job (only the one for --docker NAME, or
-                         the native one without it); the local copy goes when
-                         no browse-modes job is left
+                         cron job that runs it with --auto. With --docker or
+                         --target docker:NAME, one job per container (the
+                         invoking user needs docker access)
+  --disable-auto-update  Remove that cron job (only the one for the given
+                         container, or the native one without a target); the
+                         local copy goes when no browse-modes job is left
   --all                  With --disable-auto-update: remove every browse-modes
                          job (native and all containers)
   -h, --help             Show this help
 
+Every install run ends with a summary per server (result, versions now
+installed, backup location, auto-update state). The exit code is nonzero when
+a server failed; a run for one server with no tested release exits 3.
+
 Environment: JELLYFIN_HOST and JELLYFIN_PORT set the defaults for --host/--port.
-Installing natively (and enabling/disabling the native auto-update) needs root.
---status and --dry-run do not. Docker mode needs the docker CLI, permission to
-use it (root or the docker group) and a container running the official Jellyfin
-image layout (web files in /jellyfin/jellyfin-web, data in /config).
+A native install (and its auto-update job) needs root. --status and --dry-run
+do not. Docker targets need the docker CLI, permission to use it (root or the
+docker group) and a container with a Jellyfin web root (official image:
+/jellyfin/jellyfin-web, linuxserver image: /usr/share/jellyfin/web or
+/usr/lib/jellyfin/bin/jellyfin-web). Podman is not searched.
 EOF
 }
 
@@ -103,7 +123,10 @@ while [ $# -gt 0 ]; do
     -h|--help) usage; exit 0 ;;
     --host) HOST="${2:?--host requires a value}"; ADDR_SET=1; shift 2 ;;
     --port) PORT="${2:?--port requires a value}"; ADDR_SET=1; shift 2 ;;
-    --docker) CONTAINER="${2:?--docker requires a value}"; shift 2 ;;
+    --docker) TARGETS+=("docker:${2:?--docker requires a value}"); shift 2 ;;
+    --native) TARGETS+=("native"); shift ;;
+    --target) TARGETS+=("${2:?--target requires a value}"); shift 2 ;;
+    -y|--yes) YES=1; shift ;;
     --web-only) WEB_ONLY=1; shift ;;
     --plugin-only) PLUGIN_ONLY=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
@@ -136,43 +159,85 @@ if [ "$AUTO" -eq 1 ] && [ "$ACTION" != "install" ]; then
   echo "--auto cannot be combined with --status or the auto-update switches" >&2
   exit 2
 fi
-if [ -n "$CONTAINER" ] && [[ ! "$CONTAINER" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]; then
-  echo "Invalid container name: ${CONTAINER}" >&2
+for t in ${TARGETS[@]+"${TARGETS[@]}"}; do
+  if [ "$t" != "native" ] && [[ ! "$t" =~ ^docker:[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]; then
+    echo "Invalid target: ${t} (use native or docker:NAME)" >&2
+    exit 2
+  fi
+done
+if [ "${#TARGETS[@]}" -gt 1 ]; then
+  # Drop repeats, keep the order given.
+  uniq_targets=()
+  for t in "${TARGETS[@]}"; do
+    case " ${uniq_targets[*]:-} " in *" $t "*) ;; *) uniq_targets+=("$t") ;; esac
+  done
+  TARGETS=("${uniq_targets[@]}")
+fi
+if [ "$ACTION" != "install" ] && [ "${#TARGETS[@]}" -gt 1 ]; then
+  echo "--status and the auto-update switches work on one target at a time" >&2
   exit 2
 fi
-if [ "$ALL" -eq 1 ] && { [ "$ACTION" != "disable" ] || [ -n "$CONTAINER" ]; }; then
-  echo "--all only goes with --disable-auto-update and not with --docker" >&2
-  exit 2
+if [ "$ALL" -eq 1 ]; then
+  if [ "$ACTION" = "disable" ] && [ "${#TARGETS[@]}" -gt 0 ]; then
+    echo "--all removes every job; it cannot be combined with --docker, --native or --target" >&2
+    exit 2
+  elif [ "$ACTION" = "install" ] && [ "${#TARGETS[@]}" -gt 0 ]; then
+    echo "--all cannot be combined with --docker, --native or --target" >&2
+    exit 2
+  elif [ "$ACTION" != "install" ] && [ "$ACTION" != "disable" ]; then
+    echo "--all goes with an install run or --disable-auto-update" >&2
+    exit 2
+  fi
 fi
 
-# Without root, Docker mode keeps its state and local copy under the user's home.
-if [ -n "$CONTAINER" ] && [ "$(id -u)" -ne 0 ]; then
-  if [ -z "${BM_STATE_DIR:-}" ]; then STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/browse-modes-updater"; fi
-  if [ -z "${BM_LIB_DIR:-}" ]; then LIB_DIR="$HOME/.local/lib/browse-modes"; fi
-fi
+ALL_TARGETS=0
+if [ "$ACTION" = "install" ] && [ "$ALL" -eq 1 ]; then ALL_TARGETS=1; ALL=0; fi
 
-# Root is needed to write the native Jellyfin directories, root's crontab and
-# /usr/local. --status and --dry-run only read. Docker mode only needs access to
-# the docker daemon, and --all edits the invoking user's own crontab.
-need_root=0
-case "$ACTION" in
-  install) if [ -z "$CONTAINER" ] && [ "$DRY_RUN" -eq 0 ]; then need_root=1; fi ;;
-  enable|disable) if [ -z "$CONTAINER" ] && [ "$ALL" -eq 0 ]; then need_root=1; fi ;;
-esac
-if [ "$need_root" -eq 1 ] && [ "$(id -u)" -ne 0 ] && [ -z "${BM_SKIP_ROOT_CHECK:-}" ]; then
-  echo "This needs root; re-run with sudo" >&2
-  exit 1
+# ---- targets ------------------------------------------------------------------
+
+STATE_DIR_DEFAULT="$STATE_DIR"
+LIB_DIR_DEFAULT="$LIB_DIR"
+LOG_FILE=""; STATE_FILE=""; LOG_TAG=""; base=""
+version=""; major_minor=""
+
+# Points all per-target settings at one target ("native" or "docker:NAME").
+set_target() {
+  STATE_DIR="$STATE_DIR_DEFAULT"; LIB_DIR="$LIB_DIR_DEFAULT"
+  case "$1" in
+    docker:*) CONTAINER="${1#docker:}" ;;
+    *) CONTAINER="" ;;
+  esac
+  # Without root, Docker mode keeps its state and local copy under the user's home.
+  if [ -n "$CONTAINER" ] && [ "$(id -u)" -ne 0 ]; then
+    if [ -z "${BM_STATE_DIR:-}" ]; then STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/browse-modes-updater"; fi
+    if [ -z "${BM_LIB_DIR:-}" ]; then LIB_DIR="$HOME/.local/lib/browse-modes"; fi
+  fi
+  LOG_FILE="$STATE_DIR/updater.log"
+  STATE_FILE="$STATE_DIR/state"
+  LOG_TAG=""
+  base="http://${HOST}:${PORT}"
+  if [ -n "$CONTAINER" ]; then
+    STATE_FILE="$STATE_DIR/state.docker-$CONTAINER"
+    LOG_TAG="[docker:${CONTAINER}] "
+    if [ "$ADDR_SET" -eq 0 ]; then base="container ${CONTAINER}"; fi
+  fi
+  version=""; major_minor=""
+  DK_WEB=""; DK_CFG_HOST=""; DK_NETMODE=""; DK_MOUNTS=""; DK_PLUGINS="plugins"
+}
+
+# Root is needed to edit root's crontab and /usr/local for the native job. The
+# docker jobs and --all work on the invoking user's own crontab.
+if [ "$ACTION" = "enable" ] || [ "$ACTION" = "disable" ]; then
+  if { [ "${#TARGETS[@]}" -eq 0 ] || [ "${TARGETS[0]}" = "native" ]; } && [ "$ALL" -eq 0 ] \
+    && [ "$(id -u)" -ne 0 ] && [ -z "${BM_SKIP_ROOT_CHECK:-}" ]; then
+    echo "This needs root; re-run with sudo" >&2
+    exit 1
+  fi
 fi
+set_target "${TARGETS[0]:-native}"
 
 # ---- logging and state --------------------------------------------------------
 
-LOG_FILE="$STATE_DIR/updater.log"
-STATE_FILE="$STATE_DIR/state"
-LOG_TAG=""
-if [ -n "$CONTAINER" ]; then
-  STATE_FILE="$STATE_DIR/state.docker-$CONTAINER"
-  LOG_TAG="[docker:${CONTAINER}] "
-fi
 WRITE_LOG=0
 if [ "$ACTION" = "install" ] && [ "$DRY_RUN" -eq 0 ]; then WRITE_LOG=1; fi
 
@@ -211,9 +276,26 @@ state_get() {
   sed -n "s/^$1=//p" "$STATE_FILE" | head -1
 }
 
+# Hands the outcome of this target to the summary (RESULT_FILE is only set when
+# a target is run by the dispatcher).
+set_result() {
+  [ -n "${RESULT_FILE:-}" ] || return 0
+  {
+    printf 'result=%s\n' "$1"
+    printf 'message=%s\n' "$(printf '%s' "$2" | tr '\n' ' ')"
+    printf 'jellyfin=%s\n' "${version:-unknown}"
+    printf 'prev_plugin=%s\n' "${prev_plugin:-}"
+    printf 'prev_web=%s\n' "${prev_web:-}"
+    printf 'plugin=%s\n' "$(installed_plugin_version || true)"
+    printf 'web=%s\n' "$(installed_web_version || true)"
+    printf 'backup=%s\n' "${backup:-}"
+  } > "$RESULT_FILE" 2>/dev/null || true
+}
+
 # Records the outcome of this run next to the installed versions found on disk.
 # Skipped for dry runs and read-only invocations.
 record_run() {
+  set_result "$1" "$2"
   [ "$WRITE_LOG" -eq 1 ] || return 0
   mkdir -p "$STATE_DIR" 2>/dev/null || return 0
   [ -w "$STATE_DIR" ] || return 0
@@ -237,10 +319,6 @@ fetch() {
 ver_gt() {
   [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -1)" = "$1" ]
 }
-
-version=""
-major_minor=""
-base="http://${HOST}:${PORT}"
 
 # Prints the server's public info JSON. Native and --host/--port runs ask the
 # address from the host. Docker mode otherwise asks the container itself (works
@@ -353,6 +431,8 @@ DK_WEB_RW=1
 DK_DATA_RW=1
 DK_NETMODE=""
 DK_MOUNTS=""
+DK_ROOTFS_RW=1
+DK_PLUGINS="plugins"  # plugin dir relative to the data dir
 
 dk_path_ok() { [[ "$1" =~ ^/[A-Za-z0-9/_.-]+$ ]]; }
 
@@ -416,8 +496,14 @@ for m in c.get("Mounts") or []:
 
   DK_DATA="/config"
   if dk_path_ok "$envdata"; then DK_DATA="$envdata"; fi
+  # Some images (linuxserver) keep plugins one level down, in data/plugins.
+  DK_PLUGINS="plugins"
+  if ! docker exec "$CONTAINER" test -d "$DK_DATA/plugins" >/dev/null 2>&1 \
+    && docker exec "$CONTAINER" test -d "$DK_DATA/data/plugins" >/dev/null 2>&1; then
+    DK_PLUGINS="data/plugins"
+  fi
   DK_WEB=""
-  for cand in "$envweb" /jellyfin/jellyfin-web /usr/share/jellyfin/web; do
+  for cand in "$envweb" /jellyfin/jellyfin-web /usr/share/jellyfin/web /usr/lib/jellyfin/bin/jellyfin-web; do
     dk_path_ok "$cand" || continue
     if docker exec "$CONTAINER" test -f "$cand/index.html" >/dev/null 2>&1; then DK_WEB="$cand"; break; fi
   done
@@ -440,7 +526,7 @@ for m in c.get("Mounts") or []:
     if [ "$(id -u)" -eq 0 ]; then
       DK_CFG_HOST="$src"
     elif [ "$(stat -c %u "$src" 2>/dev/null)" = "$(id -u)" ] && [ -w "$src" ] \
-      && [ -z "$(find "$src/plugins" ! -writable -print -quit 2>/dev/null)" ]; then
+      && [ -z "$(find "$src/$DK_PLUGINS" ! -writable -print -quit 2>/dev/null)" ]; then
       # Not root: only when nothing under plugins/ (often written by a root
       # container) is out of our reach; otherwise docker cp does the work.
       DK_CFG_HOST="$src"
@@ -452,17 +538,17 @@ for m in c.get("Mounts") or []:
 # Names of the installed Browse Modes plugin dirs (one per line).
 dk_plugin_dirs() {
   if [ -n "$DK_CFG_HOST" ]; then
-    ls -1 "$DK_CFG_HOST/plugins" 2>/dev/null | grep '^Browse Modes_' || true
+    ls -1 "$DK_CFG_HOST/$DK_PLUGINS" 2>/dev/null | grep '^Browse Modes_' || true
   else
-    docker exec "$CONTAINER" ls -1 "$DK_DATA/plugins" 2>/dev/null | grep '^Browse Modes_' || true
+    docker exec "$CONTAINER" ls -1 "$DK_DATA/$DK_PLUGINS" 2>/dev/null | grep '^Browse Modes_' || true
   fi
 }
 
 dk_plugin_meta() {
   if [ -n "$DK_CFG_HOST" ]; then
-    cat "$DK_CFG_HOST/plugins/$1/meta.json" 2>/dev/null
+    cat "$DK_CFG_HOST/$DK_PLUGINS/$1/meta.json" 2>/dev/null
   else
-    docker exec "$CONTAINER" cat "$DK_DATA/plugins/$1/meta.json" 2>/dev/null
+    docker exec "$CONTAINER" cat "$DK_DATA/$DK_PLUGINS/$1/meta.json" 2>/dev/null
   fi
 }
 
@@ -484,25 +570,25 @@ dk_plugins_remove() {
   local d
   while IFS= read -r d; do
     [ -n "$d" ] || continue
-    if [ -n "$DK_CFG_HOST" ]; then rm -rf "${DK_CFG_HOST:?}/plugins/$d" || return 1
-    else dkx rm -rf "$DK_DATA/plugins/$d" || return 1; fi
+    if [ -n "$DK_CFG_HOST" ]; then rm -rf "${DK_CFG_HOST:?}/$DK_PLUGINS/$d" || return 1
+    else dkx rm -rf "$DK_DATA/$DK_PLUGINS/$d" || return 1; fi
   done < <(dk_plugin_dirs)
 }
 
 dk_plugin_put() { # dk_plugin_put <host dir> <plugin dir name>
   local owner
   if [ -n "$DK_CFG_HOST" ]; then
-    mkdir -p "$DK_CFG_HOST/plugins/$2" || return 1
-    cp -a "$1/." "$DK_CFG_HOST/plugins/$2/" || return 1
+    mkdir -p "$DK_CFG_HOST/$DK_PLUGINS/$2" || return 1
+    cp -a "$1/." "$DK_CFG_HOST/$DK_PLUGINS/$2/" || return 1
     if [ "$(id -u)" -eq 0 ]; then
-      owner=$(stat -c '%u:%g' "$DK_CFG_HOST/plugins" 2>/dev/null || stat -c '%u:%g' "$DK_CFG_HOST")
-      chown -R "$owner" "$DK_CFG_HOST/plugins/$2" || return 1
+      owner=$(stat -c '%u:%g' "$DK_CFG_HOST/$DK_PLUGINS" 2>/dev/null || stat -c '%u:%g' "$DK_CFG_HOST")
+      chown -R "$owner" "$DK_CFG_HOST/$DK_PLUGINS/$2" || return 1
     fi
   else
     owner=$(dkx stat -c '%u:%g' "$DK_DATA") || return 1
-    dkx mkdir -p "$DK_DATA/plugins/$2" || return 1
-    docker cp "$1/." "${CONTAINER}:${DK_DATA}/plugins/$2/" || return 1
-    dkx chown -R "$owner" "$DK_DATA/plugins/$2" || return 1
+    dkx mkdir -p "$DK_DATA/$DK_PLUGINS/$2" || return 1
+    docker cp "$1/." "${CONTAINER}:${DK_DATA}/$DK_PLUGINS/$2/" || return 1
+    dkx chown -R "$owner" "$DK_DATA/$DK_PLUGINS/$2" || return 1
   fi
 }
 
@@ -512,8 +598,8 @@ dk_plugin_backup() {
   mkdir -p "$1" || return 1
   while IFS= read -r d; do
     [ -n "$d" ] || continue
-    if [ -n "$DK_CFG_HOST" ]; then cp -a "$DK_CFG_HOST/plugins/$d" "$1/" || return 1
-    else docker cp "${CONTAINER}:${DK_DATA}/plugins/$d" "$1/" || return 1; fi
+    if [ -n "$DK_CFG_HOST" ]; then cp -a "$DK_CFG_HOST/$DK_PLUGINS/$d" "$1/" || return 1
+    else docker cp "${CONTAINER}:${DK_DATA}/$DK_PLUGINS/$d" "$1/" || return 1; fi
   done < <(dk_plugin_dirs)
 }
 
@@ -558,8 +644,6 @@ do_status() {
     docker_prepare || rc=$?
     if [ "$rc" -ne 0 ]; then
       echo "  Container:            $(dk_problem "$rc")"
-    elif [ "$ADDR_SET" -eq 0 ]; then
-      base="container ${CONTAINER}"
     fi
   else
     echo "Browse Modes updater status"
@@ -751,8 +835,14 @@ case "$ACTION" in
   status) do_status; exit 0 ;;
 esac
 
-# ---- install -----------------------------------------------------------------
-
+# Runs the whole install flow for the current target. Always called in a
+# subshell so its exits (and traps) end only that target.
+install_target() {
+if [ -z "$CONTAINER" ] && [ "$DRY_RUN" -eq 0 ] && [ "$(id -u)" -ne 0 ] && [ -z "${BM_SKIP_ROOT_CHECK:-}" ]; then
+  err "This needs root for a native install; re-run with sudo"
+  record_run failed "Needs root for a native install; re-run with sudo"
+  exit 1
+fi
 for cmd in curl unzip python3 md5sum sha256sum; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "Required command not found: $cmd" >&2; exit 1; }
 done
@@ -768,10 +858,12 @@ if [ "$DRY_RUN" -eq 0 ]; then
   exec 9>"$STATE_DIR/lock${CONTAINER:+.docker-$CONTAINER}"
   if ! flock -n 9; then
     log "Another Browse Modes update is already running; exiting."
+    set_result skipped "Another Browse Modes update is already running"
     exit 0
   fi
 fi
 
+backup=""
 tmp=$(mktemp -d)
 stopped=0
 
@@ -827,7 +919,6 @@ if [ -n "$CONTAINER" ]; then
       exit 1 ;;
     *) die "$(dk_problem "$rc")" ;;
   esac
-  if [ "$ADDR_SET" -eq 0 ]; then base="container ${CONTAINER}"; fi
 fi
 rc=0; detect_server || rc=$?
 case "$rc" in
@@ -836,6 +927,8 @@ case "$rc" in
   *) die "Could not determine the Jellyfin version from ${base} (/System/Info/Public)" ;;
 esac
 log "Detected Jellyfin ${version}"
+prev_plugin=$(installed_plugin_version || true)
+prev_web=$(installed_web_version || true)
 
 rc=0; load_compat || rc=$?
 case "$rc" in
@@ -960,13 +1053,14 @@ fi
 if [ "$DRY_RUN" -eq 1 ]; then
   echo "Dry run: verified downloads for Jellyfin ${version}. Would install:"
   if [ -n "$CONTAINER" ]; then
-    dest_plugin="container ${CONTAINER}:${DK_DATA}/plugins"; dest_web="container ${CONTAINER}:${DK_WEB}"
+    dest_plugin="container ${CONTAINER}:${DK_DATA}/$DK_PLUGINS"; dest_web="container ${CONTAINER}:${DK_WEB}"
   else
     dest_plugin="$plugin_dir"; dest_web="$web_dir"
   fi
   if [ "$plugin_update" -eq 1 ]; then echo "  plugin ${C_PLUGIN} (md5 ok) into ${dest_plugin}/${pdir}"; fi
   if [ "$web_update" -eq 1 ]; then echo "  web bundle ${C_WEB} (sha256 ok) into ${dest_web}"; fi
   echo "Nothing was changed."
+  set_result dry-run "Verified downloads; would install$([ "$plugin_update" -eq 1 ] && printf ' plugin %s' "$C_PLUGIN")$([ "$web_update" -eq 1 ] && printf ' web %s' "$C_WEB") (nothing changed)"
   exit 0
 fi
 
@@ -1006,7 +1100,7 @@ if [ -n "$CONTAINER" ]; then
     if [ "$plugin_update" -eq 1 ]; then
       dk_plugins_remove || return 1
       dk_plugin_put "$tmp/plugin_stage" "$pdir" || return 1
-      log "Installed plugin ${C_PLUGIN} to ${DK_DATA}/plugins/${pdir} in container ${CONTAINER}$([ -n "$DK_CFG_HOST" ] && printf ' (via %s)' "$DK_CFG_HOST")"
+      log "Installed plugin ${C_PLUGIN} to ${DK_DATA}/$DK_PLUGINS/${pdir} in container ${CONTAINER}$([ -n "$DK_CFG_HOST" ] && printf ' (via %s)' "$DK_CFG_HOST")"
     fi
     if [ "$web_update" -eq 1 ]; then
       dk_web_clear || return 1
@@ -1147,3 +1241,415 @@ fi
 err "$msg"
 record_run rolled-back "$msg"
 exit 1
+}
+
+# ---- discovery and interactive selection --------------------------------------
+
+# Questions are read from the terminal itself (fd 3), not from stdin, so they
+# also work when the script is piped from curl. BM_TTY lets the tests supply a
+# file of answers instead.
+INTERACTIVE=0
+init_tty() {
+  if [ -n "${BM_TTY:-}" ]; then
+    if [ -r "$BM_TTY" ]; then exec 3<"$BM_TTY"; INTERACTIVE=1; fi
+    return 0
+  fi
+  if [ -t 1 ] && ( : </dev/tty ) 2>/dev/null; then exec 3</dev/tty; INTERACTIVE=1; fi
+  return 0
+}
+
+ANSWER=""
+# Prints a prompt and reads one lowercased, trimmed answer. Returns 1 at end of input.
+ask() {
+  printf '%s' "$1"
+  if ! IFS= read -r ANSWER <&3; then echo; return 1; fi
+  if [ -n "${BM_TTY:-}" ]; then echo "$ANSWER"; fi
+  ANSWER=$(printf '%s' "$ANSWER" | tr 'A-Z' 'a-z' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+}
+
+# confirm "question" y|n: the default is used for an empty answer; end of input means no.
+confirm() {
+  local def="$2" hint="[y/N]"
+  if [ "$def" = "y" ]; then hint="[Y/n]"; fi
+  while true; do
+    ask "$1 $hint " || return 1
+    case "${ANSWER:-$def}" in
+      y|yes) return 0 ;;
+      n|no) return 1 ;;
+      *) echo "Please answer y or n." ;;
+    esac
+  done
+}
+
+# parse_selection <answer> <count>: fills SEL with " 1 3 " style space-padded
+# indexes. Accepts numbers, comma lists and ranges (1, 1,3, 1-3, "1 3").
+SEL=""
+parse_selection() {
+  local toks tok a b i
+  local -a parts
+  SEL=" "
+  read -ra parts <<< "${1//,/ }"
+  [ "${#parts[@]}" -gt 0 ] || return 1
+  for tok in "${parts[@]}"; do
+    if [[ "$tok" =~ ^[0-9]+$ ]]; then a=$((10#$tok)); b=$a
+    elif [[ "$tok" =~ ^([0-9]+)-([0-9]+)$ ]]; then a=$((10#${BASH_REMATCH[1]})); b=$((10#${BASH_REMATCH[2]}))
+    else return 1; fi
+    if [ "$a" -lt 1 ] || [ "$b" -gt "$2" ] || [ "$a" -gt "$b" ]; then return 1; fi
+    for ((i = a; i <= b; i++)); do
+      case "$SEL" in *" $i "*) ;; *) SEL="${SEL}${i} " ;; esac
+    done
+  done
+}
+
+# Candidate records, one per server found. Fields, separated by "|":
+# id kind name state version url supported compat installed note prev_plugin
+# prev_web plan_plugin plan_web major_minor image
+CAND=()
+
+# Prints one candidate record for target $1 (image name $2 for Docker).
+probe_target() {
+  local t="$1" img="${2:-}" state="" ver="" url="" sup=0 compat="" inst="" note="" rc=0 name kind
+  set_target "$t"
+  C_PLUGIN=""; C_WEB=""; C_WEB_SHA=""
+  if [ -n "$CONTAINER" ]; then
+    kind="docker"; name="$CONTAINER"
+    docker_prepare || rc=$?
+    case "$rc" in
+      0) state="running"; url=$(dk_published_base 2>/dev/null || true); url="${url:-no published port}" ;;
+      11) state="stopped"; note="stopped: start the container to update it" ;;
+      12) state="running"; note="no Jellyfin web files found in the container" ;;
+      13) state="unknown"; note="$(dk_problem 13)" ;;
+      *) state="unknown"; note="could not inspect the container" ;;
+    esac
+  else
+    kind="native"; name="native install"
+    url="$base"
+    if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet jellyfin 2>/dev/null; then state="running"; else state="stopped"; fi
+  fi
+  if [ "$state" = "running" ] && { [ -z "$CONTAINER" ] || [ "$rc" -eq 0 ]; }; then
+    if detect_server; then
+      ver="$version"; state="running"
+    else
+      ver=""; note="Jellyfin did not answer at ${base}"
+    fi
+  elif [ -z "$CONTAINER" ] && [ "$state" = "stopped" ]; then
+    note="stopped: start Jellyfin to update it"
+  fi
+  if [ -n "$ver" ]; then
+    rc=0; load_compat || rc=$?
+    case "$rc" in
+      0) compat="tested release for ${major_minor}: plugin ${C_PLUGIN}, web ${C_WEB}"; sup=1 ;;
+      3) compat="no tested release for ${major_minor} (nothing will be changed)" ;;
+      *) compat="could not read compat.json" ;;
+    esac
+  else
+    compat="unknown (version not available)"
+  fi
+  if [ -z "$CONTAINER" ] && [ "$sup" -eq 1 ] && [ "$(id -u)" -ne 0 ] && [ -z "${BM_SKIP_ROOT_CHECK:-}" ] && [ "$DRY_RUN" -eq 0 ]; then
+    sup=0; note="needs root: re-run with sudo"
+  fi
+  local pp pw
+  pp=$(installed_plugin_version || true); pw=$(installed_web_version || true)
+  inst="plugin ${pp:-none}, web bundle ${pw:-none}"
+  printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
+    "$t" "$kind" "$name" "$state" "${ver:-unknown}" "$url" "$sup" "$compat" "$inst" "$note" \
+    "$pp" "$pw" "$C_PLUGIN" "$C_WEB" "$major_minor" "$img"
+}
+
+native_present() {
+  if command -v systemctl >/dev/null 2>&1 && systemctl cat jellyfin.service >/dev/null 2>&1; then return 0; fi
+  if command -v dpkg-query >/dev/null 2>&1; then
+    local pkg
+    for pkg in jellyfin-server jellyfin; do
+      if dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q 'install ok installed'; then return 0; fi
+    done
+  fi
+  [ -d "$web_dir" ]
+}
+
+# Finds the native install and Docker containers that run Jellyfin. A container
+# counts when its image name says Jellyfin or, if it is running, when it holds a
+# Jellyfin web root. Podman is not searched.
+discover() {
+  local line name img st rec
+  CAND=()
+  if native_present; then
+    CAND+=("$(probe_target native)")
+  fi
+  if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+    while IFS='|' read -r name img st; do
+      [ -n "$name" ] || continue
+      if [[ ! "$name" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]; then continue; fi
+      if [[ "$img" =~ [Jj]ellyfin ]]; then
+        :
+      elif [ "$st" = "running" ] && { docker exec "$name" test -f /jellyfin/jellyfin-web/index.html \
+        || docker exec "$name" test -f /usr/share/jellyfin/web/index.html \
+        || docker exec "$name" test -f /usr/lib/jellyfin/bin/jellyfin-web/index.html; } >/dev/null 2>&1; then
+        :
+      else
+        continue
+      fi
+      rec=$(probe_target "docker:${name}" "$img")
+      CAND+=("$rec")
+    done < <(docker ps -a --format '{{.Names}}|{{.Image}}|{{.State}}' 2>/dev/null || true)
+  fi
+}
+
+# Field n (1-based) of a record.
+rf() { printf '%s' "$1" | cut -d'|' -f"$2"; }
+
+print_candidates() {
+  local i=1 rec
+  echo "Jellyfin servers found on this machine:"
+  for rec in "${CAND[@]}"; do
+    printf '  %d) %s%s\n' "$i" "$(rf "$rec" 2)" "$([ "$(rf "$rec" 2)" = docker ] && printf ': %s (image %s)' "$(rf "$rec" 3)" "$(rf "$rec" 16)")"
+    printf '       Jellyfin %s, %s, %s\n' "$(rf "$rec" 5)" "$(rf "$rec" 4)" "$(rf "$rec" 6)"
+    printf '       Compatibility: %s\n' "$(rf "$rec" 8)"
+    printf '       Installed now: %s\n' "$(rf "$rec" 9)"
+    if [ -n "$(rf "$rec" 10)" ]; then printf '       Note: %s\n' "$(rf "$rec" 10)"; fi
+    i=$((i + 1))
+  done
+}
+
+# What will happen to the record's target.
+plan_line() {
+  local rec="$1" id bdir
+  id=$(rf "$rec" 1)
+  bdir=$(set_target "$id"; if [ -n "$CONTAINER" ]; then printf '%s/backups/docker-%s' "$STATE_DIR" "$CONTAINER"; else printf '%s/backups' "$STATE_DIR"; fi)
+  if [ "$(rf "$rec" 4)" != "running" ]; then
+    echo "  - $id: skipped (not running); nothing changes"
+  elif [ "$(rf "$rec" 7)" != "1" ]; then
+    echo "  - $id: skipped ($(rf "$rec" 8)$([ -n "$(rf "$rec" 10)" ] && printf '; %s' "$(rf "$rec" 10)")); nothing changes"
+  elif [ "$(rf "$rec" 11)" = "$(rf "$rec" 13)" ] && { [ "$(rf "$rec" 14)" = "-" ] || [ "$(rf "$rec" 12)" = "$(rf "$rec" 14)" ]; }; then
+    echo "  - $id: already up to date (plugin $(rf "$rec" 13), web $(rf "$rec" 14)); nothing changes"
+  else
+    echo "  - $id: install plugin $(rf "$rec" 13) and web bundle $(rf "$rec" 14) for Jellyfin $(rf "$rec" 15);"
+    echo "      the current files are backed up under ${bdir}/ first, then the server is restarted"
+  fi
+}
+
+# Chooses the targets to work on and leaves them in RUN_TARGETS.
+RUN_TARGETS=()
+choose_targets() {
+  local i rec n idx actionable
+  discover
+  n="${#CAND[@]}"
+  if [ "$n" -eq 0 ]; then
+    echo "No Jellyfin server found (looked for a native install and for Docker containers)." >&2
+    echo "Name one yourself with --target native, --target docker:NAME, or --host and --port." >&2
+    exit 1
+  fi
+  print_candidates
+  echo
+  RUN_TARGETS=()
+  local supported=()
+  i=1
+  for rec in "${CAND[@]}"; do
+    if [ "$(rf "$rec" 7)" = "1" ] && [ "$(rf "$rec" 4)" = "running" ]; then supported+=("$i"); fi
+    i=$((i + 1))
+  done
+
+  if [ "$ALL_TARGETS" -eq 1 ] || { [ "$YES" -eq 1 ] && { [ "$n" -gt 1 ] || [ "$INTERACTIVE" -eq 0 ]; }; }; then
+    if [ "${#supported[@]}" -eq 0 ]; then
+      echo "None of these servers has a tested Browse Modes release, so nothing was changed."
+      exit 0
+    fi
+    SEL=" ${supported[*]} "
+  elif [ "$n" -eq 1 ]; then
+    SEL=" 1 "
+  else
+    while true; do
+      echo "Which servers should be updated? Enter numbers (1, 1,3, 1-3), a for all with a tested release, or q to quit."
+      ask "> " || { echo "No answer given; quitting." >&2; exit 1; }
+      case "$ANSWER" in
+        q|quit) echo "Nothing was changed."; exit 0 ;;
+        a|all)
+          if [ "${#supported[@]}" -eq 0 ]; then echo "None of the servers has a tested release."; continue; fi
+          SEL=" ${supported[*]} "; break ;;
+      esac
+      if parse_selection "$ANSWER" "$n"; then break; fi
+      echo "Not a valid choice: '${ANSWER}'. There are ${n} servers."
+    done
+  fi
+
+  for idx in $SEL; do
+    RUN_TARGETS+=("$(rf "${CAND[$((idx - 1))]}" 1)")
+  done
+  echo "Plan:"
+  for idx in $SEL; do plan_line "${CAND[$((idx - 1))]}"; done
+  echo
+  actionable=0
+  for idx in $SEL; do
+    rec="${CAND[$((idx - 1))]}"
+    if [ "$(rf "$rec" 4)" = "running" ] && [ "$(rf "$rec" 7)" = "1" ]; then actionable=$((actionable + 1)); fi
+  done
+  if [ "$actionable" -eq 0 ]; then
+    echo "None of the chosen servers can be updated right now, so nothing was changed."
+    exit 0
+  fi
+  if [ "$DRY_RUN" -eq 1 ]; then
+    echo "Dry run: the downloads will be checked, nothing will be changed."
+  elif [ "$YES" -eq 0 ] && [ "$INTERACTIVE" -eq 1 ]; then
+    if [ "$n" -eq 1 ]; then
+      confirm "Go ahead with this server?" y || { echo "Nothing was changed."; exit 0; }
+    else
+      confirm "Go ahead with these ${#RUN_TARGETS[@]} server(s)?" y || { echo "Nothing was changed."; exit 0; }
+    fi
+  fi
+}
+
+# ---- run the targets and summarise --------------------------------------------
+
+RES_DIR=""
+RUN_RCS=()
+
+res_get() { sed -n "s/^$2=//p" "$1" 2>/dev/null | head -1; }
+
+run_targets() {
+  local t idx=0 rc
+  RUN_RCS=()
+  for t in "${RUN_TARGETS[@]}"; do
+    if [ "$AUTO" -eq 0 ] && [ "${#RUN_TARGETS[@]}" -gt 1 ]; then echo; echo "== ${t}"; fi
+    rm -f "$RES_DIR/$idx"
+    set +e
+    (
+      set -e
+      RESULT_FILE="$RES_DIR/$idx"
+      set_target "$t"
+      install_target
+    )
+    rc=$?
+    set -e
+    RUN_RCS+=("$rc")
+    idx=$((idx + 1))
+  done
+}
+
+# Result text and whether it counts as a failure: label|failed(0/1).
+result_label() { # result_label <result file> <rc>
+  local f="$1" rc="$2" r m
+  r=$(res_get "$f" result); m=$(res_get "$f" message)
+  case "$r" in
+    ok)
+      if [ -z "$(res_get "$f" prev_plugin)$(res_get "$f" prev_web)" ]; then echo "installed|0"; else echo "updated|0"; fi ;;
+    noop) echo "already up to date|0" ;;
+    no-entry) echo "skipped: ${m}|0" ;;
+    skipped) echo "skipped: ${m}|0" ;;
+    dry-run) echo "dry run: ${m}|0" ;;
+    rolled-back) echo "rolled back: ${m}|1" ;;
+    failed) echo "failed: ${m}|1" ;;
+    *) if [ "$rc" -eq 0 ]; then echo "done|0"; else echo "failed: see the messages above|1"; fi ;;
+  esac
+}
+
+# After a successful interactive install, offers the daily automatic update per target.
+offer_auto_update() {
+  local idx=0 t lbl line shown=0
+  for t in "${RUN_TARGETS[@]}"; do
+    lbl=$(result_label "$RES_DIR/$idx" "${RUN_RCS[$idx]}")
+    case "${lbl%|*}" in
+      installed|updated|"already up to date")
+        line=$(set_target "$t"; cron_line)
+        if [ -z "$line" ]; then
+          if [ "$shown" -eq 0 ]; then
+            echo
+            echo "Automatic updates (optional): a daily job re-checks each server and installs the tested"
+            echo "release when one exists, for example after a Jellyfin upgrade. Nothing is enabled unless you say yes."
+            shown=1
+          fi
+          if confirm "Enable daily automatic updates for ${t}?" n; then
+            if ( set +e; set_target "$t"; do_enable ); then :; else echo "Could not enable automatic updates for ${t}; see above." >&2; fi
+            ENABLED_NOW+=("$t")
+          fi
+        fi ;;
+    esac
+    idx=$((idx + 1))
+  done
+}
+ENABLED_NOW=()
+
+print_summary() {
+  local idx=0 t f lbl failed=0 ok_changed=0 skipped=0 uptodate=0 line auto logs="" rcs
+  echo
+  echo "Summary"
+  echo "======="
+  for t in "${RUN_TARGETS[@]}"; do
+    f="$RES_DIR/$idx"
+    lbl=$(result_label "$f" "${RUN_RCS[$idx]}")
+    case "${lbl%|*}" in
+      installed|updated) ok_changed=$((ok_changed + 1)) ;;
+      "already up to date") uptodate=$((uptodate + 1)) ;;
+      skipped*|dry\ run*) skipped=$((skipped + 1)) ;;
+    esac
+    if [ "${lbl#*|}" = "1" ]; then failed=$((failed + 1)); fi
+    line=$(set_target "$t"; cron_line)
+    if [ -n "$line" ]; then auto="enabled"; else auto="not enabled"; fi
+    echo "  ${t}"
+    echo "      Jellyfin:     $(res_get "$f" jellyfin)"
+    echo "      Result:       ${lbl%|*}"
+    echo "      Plugin now:   $(res_get "$f" plugin | sed 's/^$/none/')    Web bundle now: $(res_get "$f" web | sed 's/^$/none/')"
+    if [ -n "$(res_get "$f" backup)" ]; then echo "      Backup:       $(res_get "$f" backup)"; fi
+    echo "      Auto-update:  ${auto}"
+    case " $logs " in *" $(set_target "$t"; printf '%s' "$LOG_FILE") "*) ;; *) logs="$logs $(set_target "$t"; printf '%s' "$LOG_FILE")" ;; esac
+    idx=$((idx + 1))
+  done
+  echo
+  echo "  ${#RUN_TARGETS[@]} target(s): ${ok_changed} installed or updated, ${uptodate} already up to date, ${skipped} skipped, ${failed} failed."
+  if [ "$DRY_RUN" -eq 0 ]; then echo "  Log:${logs}"; fi
+  echo
+  echo "Next steps"
+  if [ "$ok_changed" -gt 0 ]; then
+    echo "  - Reload the Jellyfin web page with a hard refresh (Ctrl+Shift+R) so the browser picks up the new files."
+  fi
+  if [ "$failed" -gt 0 ]; then
+    echo "  - A failed target was rolled back or left as it was; read the messages above and the log."
+  fi
+  echo "  - To undo an install, copy the files from the backup folder shown above back (see the README, Troubleshooting)."
+  echo "  - Automatic updates are off unless shown as enabled. Turn them on with --enable-auto-update"
+  echo "    (add --docker NAME for a container) and off with --disable-auto-update (--all removes every job)."
+  SUMMARY_FAILED="$failed"
+}
+SUMMARY_FAILED=0
+
+# ---- main (install) -----------------------------------------------------------
+
+if [ "$AUTO" -eq 0 ]; then init_tty; fi
+if [ "${#TARGETS[@]}" -gt 0 ]; then
+  RUN_TARGETS=("${TARGETS[@]}")
+elif [ "$AUTO" -eq 1 ] || [ "$ADDR_SET" -eq 1 ]; then
+  RUN_TARGETS=("native")
+else
+  if [ "$INTERACTIVE" -eq 1 ] || [ "$YES" -eq 1 ] || [ "$ALL_TARGETS" -eq 1 ]; then
+    for cmd in curl python3; do
+      command -v "$cmd" >/dev/null 2>&1 || { echo "Required command not found: $cmd" >&2; exit 1; }
+    done
+    choose_targets
+  else
+    echo "No terminal is available to ask questions, so only the native install is used." >&2
+    echo "Use --target native, --target docker:NAME, --all or --yes to choose servers without a terminal." >&2
+    RUN_TARGETS=("native")
+  fi
+fi
+
+RES_DIR=$(mktemp -d)
+trap 'rm -rf "$RES_DIR"' EXIT
+run_targets
+
+if [ "$AUTO" -eq 0 ]; then
+  if [ "$INTERACTIVE" -eq 1 ] && [ "$YES" -eq 0 ] && [ "$DRY_RUN" -eq 0 ]; then offer_auto_update; fi
+  print_summary
+fi
+
+# One target keeps its own exit code (3 means no tested release); with several,
+# any failed target makes the whole run fail.
+if [ "${#RUN_TARGETS[@]}" -eq 1 ]; then
+  exit "${RUN_RCS[0]}"
+fi
+rc_total=0
+idx=0
+for t in "${RUN_TARGETS[@]}"; do
+  lbl=$(result_label "$RES_DIR/$idx" "${RUN_RCS[$idx]}")
+  if [ "${lbl#*|}" = "1" ]; then rc_total=1; fi
+  idx=$((idx + 1))
+done
+exit "$rc_total"
