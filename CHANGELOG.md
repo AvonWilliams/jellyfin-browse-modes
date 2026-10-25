@@ -7,6 +7,24 @@ together under one number, even when only one of them changed. Each entry says w
 
 The installer script is served from `main`; these changes need no plugin or web release.
 
+- The old plugin and web directories are now **renamed into a `.bm-trash` folder (beside the plugins
+  or web directory, same filesystem) instead of being deleted first**, for native and Docker
+  installs. On a `/config` volume on ntfs-3g/FUSE, `rm -rf` of the plugin folder fails ("Directory
+  not empty", `.fuse_hidden*`) while Jellyfin has the DLLs open, which broke the update, the
+  restore (it used the same delete) and left the plugin folder empty. Now the update, the rollback
+  (new folder renamed aside, old one renamed back) and the restore all use renames; the trash is
+  deleted at the end on a best-effort basis, kept and reported if that fails, and cleaned by the
+  next run. If a restore still fails, the script prints the exact state of the files and the manual
+  steps.
+- Before installing, every existing `Browse Modes_*` folder is moved aside (older, newer, or an
+  empty leftover without `meta.json`), with a log line each, and the install checks that exactly
+  one folder with a `meta.json` remains. An empty leftover used to make Jellyfin drop the freshly
+  installed plugin at the next restart. For Docker, an empty folder is no longer mistaken for the
+  installed plugin.
+- A `systemctl start` / `docker restart` that fails at once now rolls back immediately instead of
+  first waiting out the whole health-check window (also for the start after the rollback). A start
+  that worked but is slow still gets the full window.
+
 - The web bundle now counts as installed only while its files still match what was installed
   (SHA-256 of `index.html`, `runtime.bundle.js`, `main.jellyfin.bundle.js`, recorded in
   `.browse-modes-files`). A `jellyfin-web` package reinstall or same-minor upgrade used to leave the

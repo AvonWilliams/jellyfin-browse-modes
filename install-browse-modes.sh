@@ -8,9 +8,10 @@
 # compat.json) before any server file is touched.
 #
 # Ordering (native): the Jellyfin process is stopped before any plugin/web file
-# is removed or replaced and started again afterwards. A running server holds
-# the plugin DLLs open, which makes "rm -rf" of the old plugin dir fail with
-# "Directory not empty".
+# is replaced and started again afterwards. A running server holds the plugin
+# DLLs open, which makes "rm -rf" of the old plugin dir fail with "Directory
+# not empty" (ntfs-3g/FUSE), so replaced dirs are never deleted first: they are
+# renamed into a .bm-trash dir next to the plugins/web dir and deleted at the end.
 #
 # Docker (--docker NAME): the bundle is copied into the running container and
 # the container is restarted. Nothing about how the container was created
@@ -369,10 +370,14 @@ detect_server() {
 installed_plugin_version() {
   local meta f
   if [ -n "$CONTAINER" ]; then
-    f=$(dk_plugin_dirs | head -1)
-    [ -n "$f" ] || return 0
-    meta=$(dk_plugin_meta "$f" || true)
-    printf '%s' "$meta" | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1
+    # The first dir that has a meta.json (an empty leftover dir has no version).
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      meta=$(dk_plugin_meta "$f" || true)
+      [ -n "$meta" ] || continue
+      printf '%s' "$meta" | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1
+      break
+    done < <(dk_plugin_dirs)
   else
     for f in "$plugin_dir"/Browse\ Modes_*/meta.json; do
       [ -e "$f" ] || continue
@@ -620,9 +625,53 @@ dk_plugin_meta() {
 
 dkx() { docker exec -u 0 "$CONTAINER" "$@"; }
 
-# Empties the web root without removing the dir itself (it may be a mount point).
-dk_web_clear() {
-  dkx find "$DK_WEB" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+# ---- the trash: replaced files are renamed, never deleted first ---------------
+# Deleting a plugin dir whose DLLs the running Jellyfin has open fails on some
+# filesystems (ntfs-3g/FUSE: "Directory not empty", .fuse_hidden* leftovers),
+# but renaming it works there. So whatever an update replaces is renamed into
+# <parent of the plugins or web dir>/.bm-trash/<run>/..., which is on the same
+# filesystem and outside the plugins dir, so Jellyfin never loads it. It is
+# deleted at the end of the run (best effort) or by a later run.
+BM_TRASH=".bm-trash"
+DK_MOVED=""         # plugin dirs renamed into the trash by this run (one per line)
+DK_P_PHASE=0        # 0 untouched, 1 moving the old dirs aside, 2 old dirs aside
+DK_W_PHASE=0        # 0 untouched, 1 web root changed
+
+# Runs a file command on the container's data dir: on the host when it is
+# bind-mounted, otherwise inside the container as root.
+dk_dx() { if [ -n "$DK_CFG_HOST" ]; then "$@"; else dkx "$@"; fi; }
+dk_dp() { # path of data-dir-relative $1 as dk_dx sees it
+  if [ -n "$DK_CFG_HOST" ]; then printf '%s/%s' "$DK_CFG_HOST" "$1"; else printf '%s/%s' "$DK_DATA" "$1"; fi
+}
+dk_trash_rel() { # trash root relative to the data dir, beside the plugins dir
+  case "$DK_PLUGINS" in */*) printf '%s/%s' "${DK_PLUGINS%/*}" "$BM_TRASH" ;; *) printf '%s' "$BM_TRASH" ;; esac
+}
+dk_web_trash() { printf '%s/%s' "$(dirname "$DK_WEB")" "$BM_TRASH"; } # container path
+
+# Empties the web root without removing the dir itself (it may be a mount
+# point): every entry is renamed into the trash dir <web trash>/<run>/$1.
+dk_web_clear() { # dk_web_clear old|new
+  local t
+  t="$(dk_web_trash)/$TRASH_RUN/$1"
+  DK_W_PHASE=1
+  if dkx mkdir -p "$t"; then
+    dkx find "$DK_WEB" -mindepth 1 -maxdepth 1 -exec mv {} "$t"/ \; || true
+  else
+    # No place for a trash dir: the web files are not held open, so delete.
+    dkx find "$DK_WEB" -mindepth 1 -maxdepth 1 -exec rm -rf {} + || true
+  fi
+  # find does not report a failed mv/rm; the root must really be empty now.
+  [ -z "$(dkx find "$DK_WEB" -mindepth 1 -maxdepth 1 -print | head -n 1)" ]
+}
+
+# Puts the entries of the old web root back from the trash; false when this run
+# kept none there.
+dk_web_unclear() {
+  local t
+  t="$(dk_web_trash)/$TRASH_RUN/old"
+  dkx test -d "$t" || return 1
+  dkx find "$t" -mindepth 1 -maxdepth 1 -exec mv {} "$DK_WEB"/ \; || true
+  [ -z "$(dkx find "$t" -mindepth 1 -maxdepth 1 -print | head -n 1)" ]
 }
 
 dk_web_put() { # dk_web_put <host dir whose contents are copied>
@@ -632,13 +681,69 @@ dk_web_put() { # dk_web_put <host dir whose contents are copied>
   dkx chown -R "$owner" "$DK_WEB" || return 1
 }
 
-dk_plugins_remove() {
-  local d
+# Moves every Browse Modes_* dir out of the plugins dir by renaming it into the
+# trash dir <trash>/<run>/$1. Whatever sits there (older, newer, or an empty
+# leftover without meta.json) would make Jellyfin drop the freshly installed
+# one, so exactly one such dir may exist afterwards.
+dk_plugins_trash() { # dk_plugins_trash old|new
+  local d t
+  t="$(dk_trash_rel)/$TRASH_RUN/$1"
   while IFS= read -r d; do
     [ -n "$d" ] || continue
-    if [ -n "$DK_CFG_HOST" ]; then rm -rf "${DK_CFG_HOST:?}/$DK_PLUGINS/$d" || return 1
-    else dkx rm -rf "$DK_DATA/$DK_PLUGINS/$d" || return 1; fi
+    if [ "$1" = old ]; then
+      if dk_plugin_meta "$d" >/dev/null 2>&1; then log "Moving aside the old plugin dir ${d}"
+      else log "Moving aside the leftover plugin dir ${d} (it has no meta.json)"; fi
+    fi
+    dk_dx mkdir -p "$(dk_dp "$t")" || return 1
+    dk_dx mv "$(dk_dp "$DK_PLUGINS/$d")" "$(dk_dp "$t/$d")" || return 1
+    if [ "$1" = old ]; then DK_MOVED="${DK_MOVED}${d}"$'\n'; fi
   done < <(dk_plugin_dirs)
+}
+
+# Puts the plugin dirs this run moved aside back: whatever sits in the plugins
+# dir now is renamed into the trash first, then each old dir is renamed back
+# (or copied from the backup in host dir $1 when it is not in the trash).
+dk_plugins_untrash() {
+  local d rc=0
+  if [ "$DK_P_PHASE" -ge 2 ]; then dk_plugins_trash new || rc=1; fi
+  while IFS= read -r d; do
+    [ -n "$d" ] || continue
+    if dk_dx test -d "$(dk_dp "$(dk_trash_rel)/$TRASH_RUN/old/$d")"; then
+      dk_dx mv "$(dk_dp "$(dk_trash_rel)/$TRASH_RUN/old/$d")" "$(dk_dp "$DK_PLUGINS/$d")" || rc=1
+    elif [ -d "$1/$d" ]; then
+      dk_plugin_put "$1/$d" "$d" || rc=1
+    else
+      rc=1
+    fi
+  done <<< "$DK_MOVED"
+  return "$rc"
+}
+
+# Empties and removes trash dir $2 with command runner $1 (dk_dx or dkx); adds
+# $3 (how to name it to the user) to TRASH_LEFT when it cannot be deleted.
+dk_purge_dir() {
+  "$1" test -d "$2" || return 0
+  "$1" find "$2" -mindepth 1 -maxdepth 1 -exec rm -rf {} + >/dev/null 2>&1 || true
+  "$1" rmdir "$2" >/dev/null 2>&1 || true
+  if "$1" test -d "$2"; then TRASH_LEFT="${TRASH_LEFT}$3 "; fi
+  return 0
+}
+
+# Deletes the trash (best effort; renamed files may still be locked). Sets
+# TRASH_LEFT to the places that could not be emptied.
+dk_trash_purge() {
+  local r
+  TRASH_LEFT=""
+  r="$(dk_dp "$(dk_trash_rel)")"
+  if [ -n "$DK_CFG_HOST" ]; then dk_purge_dir dk_dx "$r" "$r"; else dk_purge_dir dk_dx "$r" "${CONTAINER}:${r}"; fi
+  dk_purge_dir dkx "$(dk_web_trash)" "${CONTAINER}:$(dk_web_trash)"
+}
+
+# Exactly one Browse Modes dir, and it holds a meta.json.
+dk_plugin_verify() { # dk_plugin_verify <expected dir name>
+  local n
+  n=$(dk_plugin_dirs | grep -c . || true)
+  [ "$n" = "1" ] && [ "$(dk_plugin_dirs)" = "$1" ] && dk_plugin_meta "$1" >/dev/null 2>&1
 }
 
 dk_plugin_put() { # dk_plugin_put <host dir> <plugin dir name>
@@ -935,6 +1040,11 @@ fi
 backup=""
 tmp=$(mktemp -d)
 stopped=0
+# Replaced files are renamed into <parent>/.bm-trash/$TRASH_RUN (see the trash
+# notes at dk_web_clear) and deleted when the update is over.
+TRASH_RUN="$(date +%Y%m%d%H%M%S)-$$"
+TRASH_LEFT=""
+trash_note=""
 
 # Start the server again after we stopped it. Idempotent: only acts when
 # $stopped is 1, so the EXIT trap can call it safely on every exit path. The
@@ -1187,8 +1297,16 @@ if [ -n "$CONTAINER" ]; then
   backup_root="$STATE_DIR/backups/docker-$CONTAINER"
   backup=$(new_backup_dir "$backup_root")
 
+  # Deletes the trash dirs (best effort) and notes what could not be removed.
+  purge_trash() {
+    dk_trash_purge
+    if [ -n "$TRASH_LEFT" ]; then
+      trash_note=" The replaced files could not be deleted yet; they were left in ${TRASH_LEFT% } (outside the plugins folder, Jellyfin does not load them) and can be deleted by hand."
+      log "Could not delete the replaced files; they are in ${TRASH_LEFT% } and can be deleted by hand."
+    fi
+  }
+
   apply_docker() {
-    local d
     mkdir -p "$backup" || return 1
     if [ "$web_update" -eq 1 ]; then
       mkdir -p "$backup/web" || return 1
@@ -1198,32 +1316,67 @@ if [ -n "$CONTAINER" ]; then
       dk_plugin_backup "$backup/plugin" || return 1
     fi
 
+    # Files left by an earlier run (renamed aside, could not be deleted then).
+    dk_trash_purge
+    if [ -n "$TRASH_LEFT" ]; then log "Could not delete leftovers of an earlier run in ${TRASH_LEFT% }; continuing."; fi
+
     if [ "$plugin_update" -eq 1 ]; then
-      dk_plugins_remove || return 1
+      DK_P_PHASE=1
+      dk_plugins_trash old || return 1
+      DK_P_PHASE=2
       dk_plugin_put "$tmp/plugin_stage" "$pdir" || return 1
+      dk_plugin_verify "$pdir" || { err "After the install there is not exactly one Browse Modes plugin dir with a meta.json in ${DK_DATA}/$DK_PLUGINS"; return 1; }
       log "Installed plugin ${C_PLUGIN} to ${DK_DATA}/$DK_PLUGINS/${pdir} in container ${CONTAINER}$([ -n "$DK_CFG_HOST" ] && printf ' (via %s)' "$DK_CFG_HOST")"
     fi
     if [ "$web_update" -eq 1 ]; then
-      dk_web_clear || return 1
+      dk_web_clear old || return 1
       dk_web_put "$tmp/web_stage" || return 1
       log "Installed web bundle ${C_WEB} to ${DK_WEB} in container ${CONTAINER}"
     fi
   }
 
-  # Puts back what the backup holds for the parts this run replaced.
+  # Puts back what this run replaced: the new files are renamed aside and the
+  # old ones renamed back (copied from the backup when they are not in the trash).
   restore_docker() {
-    local d
-    if [ "$plugin_update" -eq 1 ]; then
-      dk_plugins_remove || return 1
-      for d in "$backup/plugin"/*; do
-        [ -d "$d" ] || continue
-        dk_plugin_put "$d" "$(basename "$d")" || return 1
-      done
+    local rc=0
+    if [ "$plugin_update" -eq 1 ] && [ "$DK_P_PHASE" -gt 0 ]; then
+      dk_plugins_untrash "$backup/plugin" || rc=1
     fi
-    if [ "$web_update" -eq 1 ]; then
-      dk_web_clear || return 1
-      dk_web_put "$backup/web" || return 1
+    if [ "$web_update" -eq 1 ] && [ "$DK_W_PHASE" -gt 0 ]; then
+      dk_web_clear new || rc=1
+      if ! dk_web_unclear; then dk_web_put "$backup/web" || rc=1; fi
     fi
+    return "$rc"
+  }
+
+  # Says exactly what state the files are in after a failed restore and what to
+  # do by hand.
+  restore_report() {
+    local d ploc tloc
+    if [ -n "$DK_CFG_HOST" ]; then ploc="$DK_CFG_HOST/$DK_PLUGINS"; tloc="$DK_CFG_HOST/$(dk_trash_rel)/$TRASH_RUN"
+    else ploc="${CONTAINER}:${DK_DATA}/${DK_PLUGINS}"; tloc="${CONTAINER}:${DK_DATA}/$(dk_trash_rel)/$TRASH_RUN"; fi
+    err "Restoring the previous files FAILED, so ${CONTAINER} may be missing its Browse Modes files. Current state:"
+    err "  Plugins folder ${ploc}:"
+    if [ -z "$(dk_plugin_dirs)" ]; then err "    no 'Browse Modes_*' folder"; fi
+    while IFS= read -r d; do
+      [ -n "$d" ] || continue
+      if dk_plugin_meta "$d" >/dev/null 2>&1; then err "    ${d}  (has meta.json)"; else err "    ${d}  (NO meta.json, empty or partial)"; fi
+    done < <(dk_plugin_dirs)
+    err "  Old plugin folders renamed aside by this run: ${tloc}/old (not deleted)"
+    err "  Web root ${CONTAINER}:${DK_WEB}: web files renamed aside, if any, are in ${CONTAINER}:$(dk_web_trash)/${TRASH_RUN}/old"
+    err "  Backup of the previous files (complete copy): ${backup}"
+    err "To fix it by hand:"
+    err "  1. docker stop ${CONTAINER}"
+    if [ -n "$DK_CFG_HOST" ]; then
+      err "  2. sudo rm -rf '${ploc}/Browse Modes_'*      (works now that Jellyfin has stopped)"
+      err "  3. sudo cp -a '${backup}/plugin/.' '${ploc}/'"
+    else
+      err "  2. docker run --rm --volumes-from ${CONTAINER} alpine sh -c 'rm -rf \"${DK_DATA}/${DK_PLUGINS}/Browse Modes_\"*'"
+      err "  3. docker cp '${backup}/plugin/.' '${CONTAINER}:${DK_DATA}/${DK_PLUGINS}/'"
+    fi
+    err "  4. docker start ${CONTAINER}"
+    err "  5. if the web bundle is wrong too: docker exec -u 0 ${CONTAINER} find ${DK_WEB} -mindepth 1 -maxdepth 1 -exec rm -rf {} +"
+    err "     then: docker cp '${backup}/web/.' '${CONTAINER}:${DK_WEB}/' and docker restart ${CONTAINER}"
   }
 
   restart_container() {
@@ -1237,17 +1390,20 @@ if [ -n "$CONTAINER" ]; then
   if ! apply_docker; then
     err "Applying the update failed; restoring the previous files from ${backup}"
     if restore_docker; then
-      msg_tail="restored from"
-    else
-      msg_tail="restore from"
+      purge_trash
+      die "Update failed (restored from the backup in ${backup}); the container was not restarted.${trash_note}"
     fi
-    die "Update failed (${msg_tail} the backup in ${backup}); the container was not restarted"
+    restore_report
+    die "Update failed and restoring the previous files failed too; the container was not restarted. State and manual steps are printed above (backup in ${backup})"
   fi
 
+  # A restart command that fails at once is not worth a health window: roll back
+  # immediately. The window is only for a start that worked and is slow.
   if restart_container && health_check; then
     log "Jellyfin in ${CONTAINER} is healthy after the update."
     prune_backups
-    msg=$(installed_msg)
+    purge_trash
+    msg="$(installed_msg)${trash_note}"
     log "$msg"
     record_run ok "$msg"
     log "Done. (backup of the previous files: ${backup})"
@@ -1255,14 +1411,18 @@ if [ -n "$CONTAINER" ]; then
   fi
 
   err "Jellyfin did not come back after the update; rolling back from ${backup}"
-  restored=0
-  if restore_docker; then restored=1; fi
-  restart_container || true
-  if [ "$restored" -eq 1 ] && health_check; then
+  restored=0; restarted=0
+  if restore_docker; then restored=1; else restore_report; fi
+  if restart_container; then restarted=1; fi
+  if [ "$restored" -eq 1 ] && [ "$restarted" -eq 1 ] && health_check; then
     msg="Update failed health check; rolled back to the previous files (backup kept in ${backup})"
+  elif [ "$restored" -eq 0 ]; then
+    msg="Update failed health check and restoring the previous files failed; see the state and manual steps above (backup in ${backup})"
   else
     msg="Update failed health check and Jellyfin is not answering after the rollback; check 'docker logs ${CONTAINER}' (backup in ${backup})"
   fi
+  if [ "$restored" -eq 1 ]; then purge_trash; fi
+  msg="${msg}${trash_note}"
   err "$msg"
   record_run rolled-back "$msg"
   exit 1
@@ -1272,9 +1432,52 @@ fi
 backup_root="$STATE_DIR/backups"
 backup=$(new_backup_dir "$backup_root")
 had_web=0
+p_phase=0          # plugins: 0 untouched, 1 moving the old dirs aside, 2 old dirs aside
+w_phase=0          # web: 0 untouched, 1 old web dir aside
+moved_plugins=""   # names of the plugin dirs renamed into the trash (one per line)
+ptrash="$(dirname "$plugin_dir")/$BM_TRASH"
+wtrash="$(dirname "$web_dir")/$BM_TRASH"
+
+# Renames every Browse Modes_* in the plugins dir into $ptrash/$TRASH_RUN/$1.
+# Nothing is deleted: on some filesystems (ntfs-3g/FUSE) deleting a dir whose
+# DLLs were open fails, while renaming works. Leftovers without a meta.json and
+# dirs of any other version go too, so exactly one dir is left after the install.
+native_plugins_trash() { # native_plugins_trash old|new
+  local d t
+  t="$ptrash/$TRASH_RUN/$1"
+  for d in "$plugin_dir"/Browse\ Modes_*; do
+    [ -e "$d" ] || continue
+    if [ "$1" = old ]; then
+      if [ -f "$d/meta.json" ]; then log "Moving aside the old plugin dir $(basename "$d")"
+      else log "Moving aside the leftover plugin dir $(basename "$d") (it has no meta.json)"; fi
+    fi
+    mkdir -p "$t" || return 1
+    mv "$d" "$t/" || return 1
+    if [ "$1" = old ]; then moved_plugins="${moved_plugins}$(basename "$d")"$'\n'; fi
+  done
+}
+
+# Deletes the trash dirs (best effort) and notes what could not be removed.
+native_trash_purge() {
+  local r left=""
+  for r in "$ptrash" "$wtrash"; do
+    [ -d "$r" ] || continue
+    find "$r" -mindepth 1 -maxdepth 1 -exec rm -rf {} + >/dev/null 2>&1 || true
+    rmdir "$r" >/dev/null 2>&1 || true
+    if [ -d "$r" ]; then left="${left}${r} "; fi
+  done
+  TRASH_LEFT="$left"
+}
+purge_trash() {
+  native_trash_purge
+  if [ -n "$TRASH_LEFT" ]; then
+    trash_note=" The replaced files could not be deleted yet; they were left in ${TRASH_LEFT% } (outside the plugins folder, Jellyfin does not load them) and can be deleted by hand."
+    log "Could not delete the replaced files; they are in ${TRASH_LEFT% } and can be deleted by hand."
+  fi
+}
 
 apply_native() {
-  local d
+  local d n
   mkdir -p "$backup/plugin" || return 1
   if [ -d "$web_dir" ]; then
     cp -a "$web_dir" "$backup/web" || return 1
@@ -1285,16 +1488,32 @@ apply_native() {
     cp -a "$d" "$backup/plugin/" || return 1
   done
 
+  # Files left by an earlier run (renamed aside, could not be deleted then).
+  native_trash_purge
+  if [ -n "$TRASH_LEFT" ]; then log "Could not delete leftovers of an earlier run in ${TRASH_LEFT% }; continuing."; fi
+
   if [ "$plugin_update" -eq 1 ]; then
-    rm -rf "$plugin_dir/Browse Modes_"* || return 1
+    p_phase=1
+    native_plugins_trash old || return 1
+    p_phase=2
     mkdir -p "$plugin_dir/$pdir" || return 1
     cp -a "$tmp/plugin_stage/." "$plugin_dir/$pdir/" || return 1
     # Jellyfin runs as the jellyfin user and rewrites meta.json, so give it ownership.
     if id -u jellyfin >/dev/null 2>&1; then chown -R jellyfin:jellyfin "$plugin_dir/$pdir" || return 1; fi
+    n=0
+    for d in "$plugin_dir"/Browse\ Modes_*; do [ -e "$d" ] && n=$((n + 1)); done
+    if [ "$n" -ne 1 ] || [ ! -f "$plugin_dir/$pdir/meta.json" ]; then
+      err "After the install there is not exactly one Browse Modes plugin dir with a meta.json in ${plugin_dir}"
+      return 1
+    fi
     log "Installed plugin ${C_PLUGIN} to ${plugin_dir}/${pdir}"
   fi
   if [ "$web_update" -eq 1 ]; then
-    rm -rf "$web_dir" || return 1
+    w_phase=1
+    if [ -e "$web_dir" ]; then
+      mkdir -p "$wtrash/$TRASH_RUN/old" || return 1
+      mv "$web_dir" "$wtrash/$TRASH_RUN/old/web" || return 1
+    fi
     mkdir -p "$web_dir" || return 1
     cp -a "$tmp/web_stage/." "$web_dir/" || return 1
     if id -u jellyfin >/dev/null 2>&1; then chown -R jellyfin:jellyfin "$web_dir" || return 1; fi
@@ -1302,31 +1521,81 @@ apply_native() {
   fi
 }
 
-# Puts back exactly what the backup holds for the parts this run replaced.
+# Puts back exactly what the backup holds for the parts this run replaced: the
+# new files are renamed into the trash and the old ones renamed back (copied
+# from the backup when they are not in the trash). Never deletes first.
 restore_native() {
-  if [ "$plugin_update" -eq 1 ]; then
-    rm -rf "$plugin_dir/Browse Modes_"*
-    cp -a "$backup/plugin/." "$plugin_dir/"
+  local d rc=0
+  if [ "$plugin_update" -eq 1 ] && [ "$p_phase" -gt 0 ]; then
+    if [ "$p_phase" -ge 2 ]; then native_plugins_trash new || rc=1; fi
+    while IFS= read -r d; do
+      [ -n "$d" ] || continue
+      if [ -d "$ptrash/$TRASH_RUN/old/$d" ]; then
+        mv "$ptrash/$TRASH_RUN/old/$d" "$plugin_dir/$d" || rc=1
+      elif [ -d "$backup/plugin/$d" ]; then
+        cp -a "$backup/plugin/$d" "$plugin_dir/" || rc=1
+      else
+        rc=1
+      fi
+    done <<< "$moved_plugins"
   fi
-  if [ "$web_update" -eq 1 ]; then
-    rm -rf "$web_dir"
-    if [ "$had_web" -eq 1 ]; then cp -a "$backup/web" "$web_dir"; fi
+  if [ "$web_update" -eq 1 ] && [ "$w_phase" -gt 0 ]; then
+    if [ -e "$web_dir" ]; then
+      mkdir -p "$wtrash/$TRASH_RUN/new" && mv "$web_dir" "$wtrash/$TRASH_RUN/new/web" || rc=1
+    fi
+    if [ ! -e "$web_dir" ]; then
+      if [ -d "$wtrash/$TRASH_RUN/old/web" ]; then mv "$wtrash/$TRASH_RUN/old/web" "$web_dir" || rc=1
+      elif [ "$had_web" -eq 1 ]; then cp -a "$backup/web" "$web_dir" || rc=1; fi
+    fi
   fi
+  return "$rc"
+}
+
+# Says exactly what state the files are in after a failed restore and what to
+# do by hand.
+restore_report() {
+  local d n
+  err "Restoring the previous files FAILED, so Jellyfin may be missing its Browse Modes files. Current state:"
+  err "  Plugins folder ${plugin_dir}:"
+  n=0
+  for d in "$plugin_dir"/Browse\ Modes_*; do
+    [ -e "$d" ] || continue
+    n=1
+    if [ -f "$d/meta.json" ]; then err "    $(basename "$d")  (has meta.json)"; else err "    $(basename "$d")  (NO meta.json, empty or partial)"; fi
+  done
+  if [ "$n" -eq 0 ]; then err "    no 'Browse Modes_*' folder"; fi
+  err "  Old plugin folders renamed aside by this run: ${ptrash}/${TRASH_RUN}/old (not deleted)"
+  if [ -e "$web_dir" ]; then err "  Web dir ${web_dir}: present"; else err "  Web dir ${web_dir}: MISSING"; fi
+  err "  Old web dir renamed aside by this run, if any: ${wtrash}/${TRASH_RUN}/old/web (not deleted)"
+  err "  Backup of the previous files (complete copy): ${backup}"
+  err "To fix it by hand:"
+  err "  1. sudo systemctl stop jellyfin"
+  err "  2. sudo rm -rf '${plugin_dir}/Browse Modes_'*      (works now that Jellyfin has stopped)"
+  err "  3. sudo cp -a '${backup}/plugin/.' '${plugin_dir}/'"
+  err "  4. if the web files are wrong too: sudo rm -rf '${web_dir}' && sudo cp -a '${backup}/web' '${web_dir}'"
+  err "  5. sudo systemctl start jellyfin"
 }
 
 stop_server || die "Could not stop Jellyfin; nothing was changed"
 if ! apply_native; then
   err "Applying the update failed; restoring the previous files from ${backup}"
-  restore_native || true
+  if restore_native; then
+    start_server || true
+    purge_trash
+    die "Update failed and was rolled back (backup kept in ${backup}).${trash_note}"
+  fi
+  restore_report
   start_server || true
-  die "Update failed and was rolled back (backup kept in ${backup})"
+  die "Update failed and restoring the previous files failed too; State and manual steps are printed above (backup kept in ${backup})"
 fi
 
-start_server || true
-if health_check; then
+# A start command that fails at once is not worth a health window: roll back
+# immediately. The window is only for a start that worked and is slow.
+if start_server && health_check; then
   log "Jellyfin is healthy after the update."
   prune_backups
-  msg=$(installed_msg)
+  purge_trash
+  msg="$(installed_msg)${trash_note}"
   log "$msg"
   record_run ok "$msg"
   log "Done. (backup of the previous files: ${backup})"
@@ -1335,15 +1604,19 @@ fi
 
 err "Jellyfin did not come back after the update; rolling back from ${backup}"
 stop_server || true
-restore_native || true
+restored=0
+if restore_native; then restored=1; else restore_report; fi
 # A unit that failed to start may be in start-limit-hit; let the rollback start it.
 systemctl reset-failed jellyfin >/dev/null 2>&1 || true
-start_server || true
-if health_check; then
+if start_server && [ "$restored" -eq 1 ] && health_check; then
   msg="Update failed health check; rolled back to the previous files (backup kept in ${backup})"
+elif [ "$restored" -eq 0 ]; then
+  msg="Update failed health check and restoring the previous files failed; see the state and manual steps above (backup in ${backup})"
 else
   msg="Update failed health check and Jellyfin is still not answering after rollback; check 'journalctl -u jellyfin' (backup in ${backup})"
 fi
+if [ "$restored" -eq 1 ]; then purge_trash; fi
+msg="${msg}${trash_note}"
 err "$msg"
 record_run rolled-back "$msg"
 exit 1

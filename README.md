@@ -246,9 +246,16 @@ For each server it works on, in this order:
    `/var/lib/browse-modes-updater/backups/` (`docker-NAME/` for a container; the last three are
    kept). Without root, Docker runs keep them under `~/.local/state/browse-modes-updater/`.
 5. Installs the new files and restarts Jellyfin (the service, or `docker restart` for a
-   container).
+   container). Old files are **renamed, not deleted**: the previous Browse Modes plugin folder (and
+   the previous web directory) is moved into a `.bm-trash` folder next to the plugins or web
+   directory, so Jellyfin never loads it, and any other `Browse Modes_*` folder (older, newer, or an
+   empty leftover) goes there too, leaving exactly one. Deleting a plugin folder whose DLLs the
+   running server has open fails on some filesystems (ntfs-3g/FUSE); renaming does not.
 6. **Health-checks**: it waits up to about a minute for the server to answer. If it does not, it
-   puts the backed-up files back and restarts again.
+   renames the new files aside, renames the old ones back and restarts again. If the restart
+   command itself fails, it rolls back at once instead of waiting.
+7. Deletes the `.bm-trash` folder once everything is settled. If that fails, the files stay there
+   (harmless), the summary says where, and the next run tries again.
 
 A lock stops two runs from overlapping.
 
@@ -480,6 +487,25 @@ rejected. Send the token in the `Authorization` header instead:
 ```bash
 curl -s -H 'Authorization: MediaBrowser Token="YOUR_API_KEY"' http://localhost:8096/Plugins
 ```
+
+**The update failed with "Directory not empty" or `.fuse_hidden` files (Docker with `/config` on an
+NTFS or other FUSE drive).** Older versions of the script deleted the old plugin folder while the
+server still had its DLLs open; on ntfs-3g that fails, the restore failed the same way, and the
+plugin folder was left without `meta.json`. The current script renames the old folder into
+`.bm-trash` instead and puts it back by renaming if the update has to be rolled back. If an update
+already left you with a broken plugin folder, stop Jellyfin (`docker stop NAME`), delete the
+`Browse Modes_*` folder in the config volume's `plugins` directory (this works once the server is
+stopped) and run the installer again. If the script cannot restore the files it prints their exact
+state and the commands to fix it by hand; the backup folder it names is always a complete copy.
+
+**A `.bm-trash` folder is left next to `plugins`.** The script could not delete the old files (they
+were still locked). It is outside the plugins directory, so Jellyfin ignores it; delete it by hand
+(`sudo rm -rf` on the path the summary names) or let the next run do it.
+
+**Jellyfin shows no Browse Modes plugin after a restart, and there are two `Browse Modes_*`
+folders.** Jellyfin keeps only one folder per plugin and an empty or older one can win. The
+installer now moves every other `Browse Modes_*` folder aside; with an older script, remove the
+extra folders by hand (keep the one with a `meta.json` of the version you want) and restart.
 
 **Restoring from a backup.** The installer prints the backup folder in its summary. Each backup
 holds `web/` (the previous web directory, when it was replaced) and `plugin/` (the previous Browse

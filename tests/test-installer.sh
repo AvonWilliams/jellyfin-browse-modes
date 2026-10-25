@@ -88,6 +88,7 @@ case "\$1" in
 esac
 EOF
 chmod +x "$work/bin/systemctl" "$work/bin/crontab"
+mk_fs_stubs
 
 # run_installer <args...>: runs the script against the scratch dirs, output in $work/out.
 run_installer() {
@@ -95,13 +96,13 @@ run_installer() {
   BM_RAW_BASE="file://$work/rel/raw" BM_PLUGIN_REL_BASE="file://$work/rel/plugin" \
   BM_WEB_REL_BASE="file://$work/rel/web" BM_ALLOW_LOCAL_URLS=1 BM_SKIP_ROOT_CHECK=1 \
   BM_STATE_DIR="$work/state" BM_LIB_DIR="$work/lib" BM_PLUGIN_DIR="$work/plugins" BM_WEB_DIR="$work/web" \
-  BM_HEALTH_TRIES=3 BM_HEALTH_INTERVAL=0 \
+  BM_HEALTH_TRIES="${HT:-3}" BM_HEALTH_INTERVAL="${HI:-0}" \
     bash "$script" --host 127.0.0.1 --port "$port" "$@" > "$work/out" 2>&1
 }
 
 reset_target() {
-  rm -rf "${work:?}/plugins" "${work:?}/web" "${work:?}/state" "${work:?}/lib"
-  rm -f "${work:?}/systemctl.log" "${work:?}/start_fail" "${work:?}/stop_fail" "${work:?}/jf_down"
+  rm -rf "${work:?}/plugins" "${work:?}/web" "${work:?}/state" "${work:?}/lib" "${work:?}/.bm-trash"
+  rm -f "${work:?}/systemctl.log" "${work:?}/start_fail" "${work:?}/stop_fail" "${work:?}/jf_down" "${work:?}/rm_fail" "${work:?}/mv_fail" "${work:?}/rm.log"
   mkdir -p "$work/plugins" "$work/web"
 }
 
@@ -313,6 +314,114 @@ check "failing stop: files untouched" contains "$work/web/index.html" "OLD"
 check "failing stop: state records failed" contains "$work/state/state" "last_result=failed"
 check "failing stop: no half-done backup replaced anything" test ! -e "$work/web/.browse-modes-version"
 rm -f "$work/stop_fail"
+
+# A start that fails at once rolls back at once; the health window is only used
+# when the start worked (the server is just slow).
+echo "== immediate start failure"
+build_release 12.3.0 12.3.0 12.3
+reset_target; echo OLD > "$work/web/index.html"
+echo all > "$work/start_fail"
+SECONDS=0
+HT=6 HI=2 run_installer --auto; rc=$?
+elapsed=$SECONDS
+check "immediate start failure: exit 1" test "$rc" -eq 1
+check "immediate start failure: rolled back" contains "$work/state/state" "last_result=rolled-back"
+check "immediate start failure: no health window waited (took ${elapsed}s, each window is 12s)" test "$elapsed" -le 4
+reset_target; echo OLD > "$work/web/index.html"
+build_release 12.3.0 9.9.9 12.3
+SECONDS=0
+HT=3 HI=1 run_installer --auto; rc=$?
+elapsed=$SECONDS
+check "slow/unhealthy start: the health window is still used" test "$elapsed" -ge 2
+check "slow/unhealthy start: rolled back" contains "$work/state/state" "last_result=rolled-back"
+
+# ---- renaming instead of deleting --------------------------------------------
+# rm fails on the old plugin dir and on the web dir (the ntfs-3g/FUSE case with
+# the DLLs open); renaming works. A fixture with the old plugin installed:
+old_state() {
+  reset_target
+  mkdir -p "$work/plugins/Browse Modes_2.2.0.0"
+  echo '{"name":"Browse Modes","version":"2.2.0.0"}' > "$work/plugins/Browse Modes_2.2.0.0/meta.json"
+  echo OLDDLL > "$work/plugins/Browse Modes_2.2.0.0/a.dll"
+  echo OLD > "$work/web/index.html"
+}
+count_bm() { find "$work/plugins" -mindepth 1 -maxdepth 1 -name 'Browse Modes_*' | wc -l; }
+printf '%s\n' '*/plugins/Browse Modes_*' '*/web' '*/web/*' > "$work/rm_fail.sample"
+
+echo "== rm fails on the old plugin dir"
+build_release 12.3.0 12.3.0 12.3
+old_state; cp "$work/rm_fail.sample" "$work/rm_fail"
+run_installer; rc=$?
+check "rm failing: install succeeds" test "$rc" -eq 0
+check "rm failing: exactly one Browse Modes dir" test "$(count_bm)" -eq 1
+check "rm failing: it is the new one with meta.json" test -f "$work/plugins/Browse Modes_12.3.0/meta.json"
+check "rm failing: web swapped" contains "$work/web/index.html" "12.3.0"
+check "rm failing: state records ok" contains "$work/state/state" "last_result=ok"
+check "rm failing: server started once after the stop" test "$(grep -c '^start jellyfin' "$work/systemctl.log")" -eq 1
+check "rm failing: nobody tried to rm the old plugin dir" bash -c "! grep -q 'plugins/Browse Modes_' '$work/rm.log'"
+check "rm failing: move-aside is logged" contains "$work/out" "Moving aside the old plugin dir Browse Modes_2.2.0.0"
+check "rm failing: trash is next to the plugins dir, not in it" test -z "$(find "$work/plugins" -name '.bm-trash*')"
+check "rm failing: trash was deleted at the end" test ! -e "$work/.bm-trash"
+# The trash cannot be deleted either: left behind, said so, and the run is still ok.
+old_state; printf '%s\n' '*/plugins/Browse Modes_*' '*/web' '*/.bm-trash/*' > "$work/rm_fail"
+run_installer; rc=$?
+check "undeletable trash: install still succeeds" test "$rc" -eq 0
+check "undeletable trash: old plugin dir kept in the trash" test -f "$work"/.bm-trash/*/old/"Browse Modes_2.2.0.0"/a.dll
+check "undeletable trash: tells the user where it is" contains "$work/out" "$work/.bm-trash"
+check "undeletable trash: one Browse Modes dir in the plugins dir" test "$(count_bm)" -eq 1
+check "undeletable trash: recorded in the state message" contains "$work/state/state" "could not be deleted"
+# A later run cleans the old trash first.
+rm -f "$work/rm_fail"
+build_release 12.3.1 12.3.1 12.3
+run_installer; rc=$?
+check "later run: succeeds" test "$rc" -eq 0
+check "later run: old trash is gone" test ! -e "$work/.bm-trash"
+check "later run: 12.3.1 installed, one dir" bash -c "[ -f '$work/plugins/Browse Modes_12.3.1/meta.json' ] && [ '$(count_bm)' = 1 ]"
+
+echo "== rollback by renaming"
+build_release 12.3.0 9.9.9 12.3
+old_state; cp "$work/rm_fail.sample" "$work/rm_fail"
+ino=$(stat -c %i "$work/plugins/Browse Modes_2.2.0.0")
+run_installer; rc=$?
+check "rename rollback: exit 1" test "$rc" -eq 1
+check "rename rollback: old plugin dir is back" contains "$work/plugins/Browse Modes_2.2.0.0/a.dll" "OLDDLL"
+check "rename rollback: it is the same directory (renamed back, not copied)" test "$(stat -c %i "$work/plugins/Browse Modes_2.2.0.0")" = "$ino"
+check "rename rollback: new plugin dir gone" test "$(count_bm)" -eq 1
+check "rename rollback: web restored" contains "$work/web/index.html" "OLD"
+check "rename rollback: reported" contains "$work/out" "rolled back to the previous files"
+check "rename rollback: nothing was rm'd in the plugins dir" bash -c "! grep -q 'plugins/Browse Modes_' '$work/rm.log'"
+check "rename rollback: trash deleted afterwards" test ! -e "$work/.bm-trash"
+
+echo "== stale Browse Modes dirs"
+build_release 12.3.0 12.3.0 12.3
+old_state
+mkdir -p "$work/plugins/Browse Modes_2.4.3" "$work/plugins/Browse Modes_9.9.9"
+echo '{"name":"Browse Modes","version":"3.0.0"}' > "$work/plugins/Browse Modes_9.9.9/meta.json"
+run_installer; rc=$?
+check "stale dirs: install succeeds" test "$rc" -eq 0
+check "stale dirs: exactly one Browse Modes dir" test "$(count_bm)" -eq 1
+check "stale dirs: it has meta.json" test -f "$work/plugins/Browse Modes_12.3.0/meta.json"
+check "stale dirs: empty leftover is logged" contains "$work/out" "Moving aside the leftover plugin dir Browse Modes_2.4.3 (it has no meta.json)"
+check "stale dirs: newer dir is moved aside too" contains "$work/out" "Moving aside the old plugin dir Browse Modes_9.9.9"
+old_state; mkdir -p "$work/plugins/Browse Modes_2.4.3"; rm -rf "$work/plugins/Browse Modes_2.2.0.0"
+run_installer; rc=$?
+check "only an empty leftover dir: install succeeds with one dir" bash -c "[ '$rc' = 0 ] && [ '$(count_bm)' = 1 ] && [ -f '$work/plugins/Browse Modes_12.3.0/meta.json' ]"
+
+echo "== restore itself fails"
+build_release 12.3.0 9.9.9 12.3
+old_state; echo '*/plugins/Browse Modes_2.2.0.0' > "$work/mv_fail"
+run_installer; rc=$?
+check "failed restore: exit 1" test "$rc" -eq 1
+check "failed restore: says the restore failed" contains "$work/out" "Restoring the previous files FAILED"
+check "failed restore: lists the plugins folder state" contains "$work/out" "no 'Browse Modes_*' folder"
+check "failed restore: the new dir was renamed aside, not deleted" test -f "$work"/.bm-trash/*/new/"Browse Modes_12.3.0"/meta.json
+check "failed restore: web dir was restored" contains "$work/web/index.html" "OLD"
+check "failed restore: tells where the old dir is" contains "$work/out" "$work/.bm-trash/"
+check "failed restore: gives manual steps" contains "$work/out" "To fix it by hand:"
+check "failed restore: manual steps use the backup path" bash -c "grep -q 'cp -a .*/backups/.*/plugin/' '$work/out'"
+check "failed restore: old plugin dir is kept in the trash, not deleted" test -f "$work"/.bm-trash/*/old/"Browse Modes_2.2.0.0"/a.dll
+check "failed restore: backup is kept" test -f "$work"/state/backups/*/plugin/"Browse Modes_2.2.0.0"/a.dll
+check "failed restore: state records rolled-back" contains "$work/state/state" "last_result=rolled-back"
 
 # ---- 5. auto-update switch ---------------------------------------------------
 echo "== cron"

@@ -134,6 +134,7 @@ case "\$1" in
 esac
 EOF
 chmod +x "$work/bin/docker" "$work/bin/crontab"
+mk_fs_stubs
 
 # mk_inspect <name> <bind|volume> <running 0|1> <web_ro 0|1>
 mk_inspect() {
@@ -179,7 +180,7 @@ cfgdir() { # cfgdir <name>: where the container's /config really lives
 }
 webdir() { printf '%s' "$work/ctr/$1/fs$(cat "$work/ctr/$1/webpath" 2>/dev/null || echo /jellyfin/jellyfin-web)"; }
 restarts() { grep -c '^restart' "$work/docker.log" 2>/dev/null || true; }
-reset_state() { rm -rf "${work:?}/state" "${work:?}/lib"; rm -f "$work/docker.log"; : > "$work/docker.log"; rm -f "$work"/{docker_denied,curl_missing,wget_missing,cp_fail,jf_down,restart_fail}; }
+reset_state() { rm -rf "${work:?}/state" "${work:?}/lib"; rm -f "$work/docker.log"; : > "$work/docker.log"; rm -f "$work"/{docker_denied,curl_missing,wget_missing,cp_fail,jf_down,restart_fail,rm_fail,mv_fail,rm.log}; }
 
 # run_dk <args...>: runs the script against the scratch tree, output in $work/out.
 run_dk() {
@@ -187,7 +188,7 @@ run_dk() {
   BM_RAW_BASE="file://$work/rel/raw" BM_PLUGIN_REL_BASE="file://$work/rel/plugin" \
   BM_WEB_REL_BASE="file://$work/rel/web" BM_ALLOW_LOCAL_URLS=1 \
   BM_STATE_DIR="$work/state" BM_LIB_DIR="$work/lib" BM_SKIP_ROOT_CHECK=1 \
-  BM_HEALTH_TRIES=3 BM_HEALTH_INTERVAL=0 \
+  BM_HEALTH_TRIES="${HT:-3}" BM_HEALTH_INTERVAL="${HI:-0}" \
     bash "$script" "$@" > "$work/out" 2>&1
 }
 

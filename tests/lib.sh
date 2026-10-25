@@ -38,3 +38,46 @@ JSON
 {"schema":1,"releases":{"$key":{"plugin":"$pver","web":"$wver","webSha256":"$sha"}}}
 JSON
 }
+
+# ---- stub rm / mv that fail on request ---------------------------------------
+# mk_fs_stubs writes $work/bin/rm and $work/bin/mv (the tests put $work/bin first
+# in the PATH of the installer). They stand in for a filesystem such as
+# ntfs-3g/FUSE, where deleting a dir whose files a process has open fails
+# ("Directory not empty") but renaming it works.
+#   $work/rm_fail  one glob pattern per line; an rm with an argument matching any
+#                  of them fails, for example '*/plugins/Browse Modes_*'
+#   $work/mv_fail  one glob pattern per line, matched against the destination
+#   $work/rm.log   every rm call
+mk_fs_stubs() {
+  cat > "$work/bin/rm" <<EOF2
+#!/bin/bash
+W="$work"
+EOF2
+  cat >> "$work/bin/rm" <<'EOF2'
+echo "$*" >> "$W/rm.log"
+if [ -s "$W/rm_fail" ]; then
+  for a in "$@"; do
+    while IFS= read -r pat; do
+      [ -n "$pat" ] || continue
+      case "$a" in $pat) echo "rm: cannot remove '$a': Directory not empty" >&2; exit 1 ;; esac
+    done < "$W/rm_fail"
+  done
+fi
+exec /bin/rm "$@"
+EOF2
+  cat > "$work/bin/mv" <<EOF2
+#!/bin/bash
+W="$work"
+EOF2
+  cat >> "$work/bin/mv" <<'EOF2'
+if [ -s "$W/mv_fail" ]; then
+  dest="${@: -1}"
+  while IFS= read -r pat; do
+    [ -n "$pat" ] || continue
+    case "$dest" in $pat) echo "mv: cannot move to '$dest'" >&2; exit 1 ;; esac
+  done < "$W/mv_fail"
+fi
+exec /bin/mv "$@"
+EOF2
+  chmod +x "$work/bin/rm" "$work/bin/mv"
+}

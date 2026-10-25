@@ -207,6 +207,119 @@ check "failed copy restores the web root" contains "$(webdir jf)/index.html" "ST
 check "failed copy restores the old plugin" test -f "$(cfgdir jf)/plugins/Browse Modes_2.2.0.0/meta.json"
 check "failed copy does not restart" test "$(restarts)" -eq 0
 
+# ---- 5b. a start that fails at once rolls back at once ---------------------
+echo "== immediate restart failure"
+build_release 12.3.0 12.3.0 12.3
+new_ctr jf; reset_state
+echo all > "$work/restart_fail"
+SECONDS=0
+HT=6 HI=2 run_dk --auto --docker jf; rc=$?
+elapsed=$SECONDS
+check "immediate restart failure: exit 1" test "$rc" -eq 1
+check "immediate restart failure: rolled back" contains "$(state_file jf)" "last_result=rolled-back"
+check "immediate restart failure: no health window waited (took ${elapsed}s, each window is 12s)" test "$elapsed" -le 4
+build_release 12.3.0 9.9.9 12.3
+new_ctr jf; reset_state
+SECONDS=0
+HT=3 HI=1 run_dk --auto --docker jf; rc=$?
+elapsed=$SECONDS
+check "restart works but server unhealthy: the health window is still used" test "$elapsed" -ge 2
+check "restart works but server unhealthy: rolled back" contains "$(state_file jf)" "last_result=rolled-back"
+
+# ---- 5c. rename instead of delete (ntfs-3g/FUSE with the DLLs open) ----------
+# rm fails on the old plugin dir and on the web files; renaming works.
+printf '%s\n' '*/plugins/Browse Modes_*' '*/jellyfin-web/*' > "$work/rm_fail.sample"
+count_bm() { find "$(cfgdir "$1")/plugins" -mindepth 1 -maxdepth 1 -name 'Browse Modes_*' | wc -l; }
+seed_old() { # seed_old <name>: give the old plugin dir a DLL
+  echo OLDDLL > "$(cfgdir "$1")/plugins/Browse Modes_2.2.0.0/a.dll"
+}
+for kind in bind volume; do
+  echo "== rm fails: $kind"
+  build_release 12.3.0 12.3.0 12.3
+  new_ctr jf "$kind"; seed_old jf; reset_state; cp "$work/rm_fail.sample" "$work/rm_fail"
+  run_dk --docker jf; rc=$?
+  check "$kind, rm failing: install succeeds" test "$rc" -eq 0
+  check "$kind, rm failing: exactly one Browse Modes dir" test "$(count_bm jf)" -eq 1
+  check "$kind, rm failing: it is the new one with meta.json" test -f "$(cfgdir jf)/plugins/Browse Modes_12.3.0/meta.json"
+  check "$kind, rm failing: web swapped" contains "$(webdir jf)/index.html" "12.3.0"
+  check "$kind, rm failing: nobody tried to rm the old plugin dir" bash -c "! grep -q 'plugins/Browse Modes_' '$work/rm.log'"
+  check "$kind, rm failing: container restarted once" test "$(restarts)" -eq 1
+  check "$kind, rm failing: state records ok" contains "$(state_file jf)" "last_result=ok"
+  check "$kind, rm failing: trash is outside the plugins dir" test -z "$(find "$(cfgdir jf)/plugins" -name '.bm-trash*')"
+  check "$kind, rm failing: trash deleted at the end" test ! -e "$(cfgdir jf)/.bm-trash"
+  check "$kind, rm failing: web trash deleted at the end" test ! -e "$work/ctr/jf/fs/jellyfin/.bm-trash"
+  check "$kind, rm failing: move-aside is logged" contains "$work/out" "Moving aside the old plugin dir Browse Modes_2.2.0.0"
+
+  # The trash cannot be deleted either: it stays, the user is told, a later run cleans it.
+  build_release 12.3.0 12.3.0 12.3
+  new_ctr jf "$kind"; seed_old jf; reset_state
+  printf '%s\n' '*/plugins/Browse Modes_*' '*/jellyfin-web/*' '*/.bm-trash/*' > "$work/rm_fail"
+  run_dk --docker jf; rc=$?
+  check "$kind, undeletable trash: install still succeeds" test "$rc" -eq 0
+  check "$kind, undeletable trash: old plugin dir kept in the trash" test -f "$(cfgdir jf)"/.bm-trash/*/old/"Browse Modes_2.2.0.0"/a.dll
+  check "$kind, undeletable trash: tells the user where it is" contains "$work/out" ".bm-trash"
+  check "$kind, undeletable trash: still exactly one plugin dir" test "$(count_bm jf)" -eq 1
+  rm -f "$work/rm_fail"
+  build_release 12.3.1 12.3.1 12.3
+  run_dk --docker jf; rc=$?
+  check "$kind, later run: succeeds" test "$rc" -eq 0
+  check "$kind, later run: old trash cleaned" test ! -e "$(cfgdir jf)/.bm-trash"
+  check "$kind, later run: 12.3.1 installed, one dir" bash -c "[ -f '$(cfgdir jf)/plugins/Browse Modes_12.3.1/meta.json' ] && [ '$(count_bm jf)' = 1 ]"
+
+  echo "== rollback by renaming: $kind"
+  build_release 12.3.0 9.9.9 12.3
+  new_ctr jf "$kind"; seed_old jf; reset_state; cp "$work/rm_fail.sample" "$work/rm_fail"
+  ino=$(stat -c %i "$(cfgdir jf)/plugins/Browse Modes_2.2.0.0")
+  run_dk --docker jf; rc=$?
+  check "$kind, rename rollback: exit 1" test "$rc" -eq 1
+  check "$kind, rename rollback: old plugin dir is back with its DLL" contains "$(cfgdir jf)/plugins/Browse Modes_2.2.0.0/a.dll" "OLDDLL"
+  check "$kind, rename rollback: it is the same directory (renamed back)" test "$(stat -c %i "$(cfgdir jf)/plugins/Browse Modes_2.2.0.0")" = "$ino"
+  check "$kind, rename rollback: only the old dir is left" test "$(count_bm jf)" -eq 1
+  check "$kind, rename rollback: web restored" contains "$(webdir jf)/index.html" "STOCK"
+  check "$kind, rename rollback: no new marker" test ! -e "$(webdir jf)/.browse-modes-version"
+  check "$kind, rename rollback: reported" contains "$work/out" "rolled back to the previous files"
+  check "$kind, rename rollback: container restarted again" test "$(restarts)" -eq 2
+  check "$kind, rename rollback: trash deleted afterwards" test ! -e "$(cfgdir jf)/.bm-trash"
+done
+
+echo "== stale Browse Modes dirs"
+build_release 12.3.0 12.3.0 12.3
+new_ctr jf; reset_state
+mkdir -p "$(cfgdir jf)/plugins/Browse Modes_2.4.3" "$(cfgdir jf)/plugins/Browse Modes_9.9.9"
+echo '{"name":"Browse Modes","version":"3.0.0"}' > "$(cfgdir jf)/plugins/Browse Modes_9.9.9/meta.json"
+run_dk --docker jf; rc=$?
+check "stale dirs: install succeeds" test "$rc" -eq 0
+check "stale dirs: exactly one Browse Modes dir" test "$(count_bm jf)" -eq 1
+check "stale dirs: it has meta.json" test -f "$(cfgdir jf)/plugins/Browse Modes_12.3.0/meta.json"
+check "stale dirs: empty leftover is logged" contains "$work/out" "Moving aside the leftover plugin dir Browse Modes_2.4.3 (it has no meta.json)"
+check "stale dirs: newer dir is moved aside too" contains "$work/out" "Moving aside the old plugin dir Browse Modes_9.9.9"
+new_ctr vol volume; reset_state
+rm -rf "$(cfgdir vol)/plugins/Browse Modes_2.2.0.0"; mkdir -p "$(cfgdir vol)/plugins/Browse Modes_2.4.3"
+run_dk --docker vol; rc=$?
+check "volume, only an empty leftover dir: install succeeds with one good dir" bash -c "[ '$rc' = 0 ] && [ '$(count_bm vol)' = 1 ] && [ -f '$(cfgdir vol)/plugins/Browse Modes_12.3.0/meta.json' ]"
+# An empty dir sorting before the valid one must not hide the installed version.
+new_ctr jf; reset_state
+run_dk --docker jf
+mkdir -p "$(cfgdir jf)/plugins/Browse Modes_0.0.1"
+run_dk --auto --docker jf; rc=$?
+check "empty leftover next to an installed plugin: not mistaken for a missing plugin" contains "$(state_file jf)" "last_result=noop"
+
+echo "== restore itself fails"
+build_release 12.3.0 9.9.9 12.3
+new_ctr jf; seed_old jf; reset_state
+echo '*/plugins/Browse Modes_2.2.0.0' > "$work/mv_fail"
+run_dk --docker jf; rc=$?
+check "failed restore: exit 1" test "$rc" -eq 1
+check "failed restore: says the restore failed" contains "$work/out" "Restoring the previous files FAILED"
+check "failed restore: lists the plugins folder state" contains "$work/out" "no 'Browse Modes_*' folder"
+check "failed restore: tells where the old dir is" contains "$work/out" ".bm-trash/"
+check "failed restore: gives manual steps" contains "$work/out" "To fix it by hand:"
+check "failed restore: manual steps name the backup" bash -c "grep -q 'cp -a .*/backups/docker-jf/.*/plugin/' '$work/out'"
+check "failed restore: old plugin dir kept in the trash" test -f "$(cfgdir jf)"/.bm-trash/*/old/"Browse Modes_2.2.0.0"/a.dll
+check "failed restore: backup kept" test -f "$work"/state/backups/docker-jf/*/plugin/"Browse Modes_2.2.0.0"/a.dll
+check "failed restore: web root restored" contains "$(webdir jf)/index.html" "STOCK"
+check "failed restore: state records rolled-back" contains "$(state_file jf)" "last_result=rolled-back"
+
 # ---- 6. container problems ---------------------------------------------------
 echo "== container problems"
 build_release 12.3.0 12.3.0 12.3
