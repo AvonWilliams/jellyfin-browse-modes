@@ -515,7 +515,7 @@ not in it is unsupported until a release is tested and added (see [RELEASING.md]
 
 | Jellyfin | Plugin | Web bundle | Installer |
 |---|---|---|---|
-| 12.3 | 12.3.0 (plugin ABI 12.3) | 12.3.0 | listed in `compat.json` once released; until then it reports no tested release |
+| 12.3 | 12.3.0 (plugin ABI 12.3) | 12.3.0 | listed in `compat.json` |
 | 12.2 | 2.4.2 (ABI 12.2) | 2.4.2 | listed in `compat.json` |
 | 12.1 | 2.4.2 (ABI 12.1), frozen | no web build | plugin catalog only |
 | 12.0 | 2.4.2 (ABI 12.0), frozen | no web build | plugin catalog only |
