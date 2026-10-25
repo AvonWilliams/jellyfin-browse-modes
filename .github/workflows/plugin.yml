@@ -90,6 +90,8 @@ jobs:
         run: |
           echo "### Plugin ${{ steps.version.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
           echo "${{ steps.version.outputs.abi }}: \`${{ steps.package.outputs.checksum }}\`" >> "$GITHUB_STEP_SUMMARY"
+          # Also in the job log, so it can be read with `gh run view --log`.
+          echo "md5 browse-modes_${{ steps.version.outputs.version }}_${{ steps.version.outputs.abi }}.zip ${{ steps.package.outputs.checksum }}"
 
       - uses: actions/upload-artifact@v4
         with:
