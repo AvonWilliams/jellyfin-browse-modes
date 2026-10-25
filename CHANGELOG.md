@@ -3,6 +3,28 @@
 Versions cover the project as a whole — plugin, web client and Android TV client are released
 together under one number, even when only one of them changed. Each entry says which parts moved.
 
+## Unreleased — installer fixes
+
+The installer script is served from `main`; these changes need no plugin or web release.
+
+- The web bundle now counts as installed only while its files still match what was installed
+  (SHA-256 of `index.html`, `runtime.bundle.js`, `main.jellyfin.bundle.js`, recorded in
+  `.browse-modes-files`). A `jellyfin-web` package reinstall or same-minor upgrade used to leave the
+  version marker behind, so the daily job never re-applied the bundle. A bundle installed by an older
+  script is installed once more to record the fingerprint.
+- A failing `systemctl start` (ExecStartPre failure, start-limit-hit) or `docker restart` no longer
+  ends the run before the health check: it rolls back, records the result, exits 1 and does not log
+  the failure twice. The rollback runs `systemctl reset-failed` first. Backup folders created in the
+  same second no longer nest.
+- Exit code 3 for "no tested release" is the same in the interactive flow, `--all`, `--yes`,
+  `--target` and `--docker`: every chosen server skipped for that reason gives 3 (`--auto` stays 0);
+  a failure gives 1; any installed or up-to-date server gives 0.
+- "Next steps" and the backup hint appear only when they apply; dry runs are counted separately from
+  skips; the confirmation names the chosen server(s); raw `sha256sum`/`md5sum` warnings are hidden.
+- Discovery marks a native entry that is the same server as a running container ("same server as
+  docker:NAME") and a native web directory with no service, package or listener ("stale files"); both
+  are left out of `all`, `--all` and `--yes`.
+
 ## 12.3.0 — Jellyfin 12.3 support
 
 **Versioning change.** Releases are now numbered `<Jellyfin major>.<Jellyfin minor>.<patch>`. The

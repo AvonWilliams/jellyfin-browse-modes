@@ -121,6 +121,14 @@ You then choose which to update:
 | `a` or `all` | every running server that has a tested release |
 | `q` | quit without changing anything |
 
+Two kinds of entry are shown but never offered by `a`, `--all` or `--yes`:
+
+- **Same server twice.** A native entry that answers at the same address with the same server Id as
+  a running container (typically a host-network container next to leftover native files) is marked
+  "same server as docker:NAME". Update it through the container; it is never touched twice.
+- **Stale files.** A native web directory with no Jellyfin service, no package and nothing
+  listening is shown as "not running (stale files)".
+
 Bad input (a letter, a number out of range, an empty line) is reported and you are asked again. If
 only one server is found, it is shown and you just confirm with `Y/n`. Stopped containers are
 listed so you can see them, but they cannot be updated until they are running; they are skipped.
@@ -222,7 +230,14 @@ For each server it works on, in this order:
 1. Reads the running Jellyfin version and looks up its major.minor in `compat.json`. No entry: it
    stops there, changes nothing and says so.
 2. Compares with what is installed. It skips what is already at the tested version, **never
-   downgrades**, and **never installs a bundle for a different Jellyfin major.minor**.
+   downgrades**, and **never installs a bundle for a different Jellyfin major.minor**. For the web
+   bundle the version marker alone is not trusted: the install also records the SHA-256 of
+   `index.html`, `runtime.bundle.js` and `main.jellyfin.bundle.js` (in `.browse-modes-files` next to
+   `.browse-modes-version`), and the bundle counts as installed only while those files still match.
+   So when `apt` reinstalls or upgrades `jellyfin-web` (even `12.3.0` to `12.3.1`) and puts stock
+   files back, the next run notices and installs the bundle again. A bundle installed by an
+   earlier version of this script has no fingerprint; it is installed once more to record one
+   (one extra restart on the first run after you update the script).
 3. Downloads the release and **verifies it before touching anything**: the plugin against the MD5
    in `manifest.json`, the web bundle against the SHA-256 in `compat.json`. A missing or
    placeholder checksum is refused.
@@ -452,8 +467,10 @@ your Jellyfin version in [`compat.json`](compat.json) yet, so nothing was change
 stock Jellyfin. Wait for a release for that version, or stay on a Jellyfin version listed in the
 [compatibility](#compatibility) section.
 
-**The tiles disappeared after a Jellyfin upgrade.** An apt upgrade replaces `/usr/share/jellyfin/web`,
-and a new Docker image has stock web files. Re-run the installer, or let
+**The tiles disappeared after a Jellyfin upgrade.** An apt upgrade or reinstall replaces
+`/usr/share/jellyfin/web`, and a new Docker image has stock web files. The installer compares the
+web files with the fingerprint it recorded, so re-running it (or the next scheduled run) installs the
+bundle again even when the version marker is still there. Re-run the installer, or let
 [automatic updates](#automatic-updates-optional) do it on the next scheduled run (up to a day).
 Then hard-refresh the browser (Ctrl+Shift+R).
 

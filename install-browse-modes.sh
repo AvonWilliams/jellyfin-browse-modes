@@ -68,6 +68,8 @@ With no target given, the script looks for Jellyfin on this machine (a native
 install and Docker containers, running or stopped), lists what it found, lets
 you pick one or several, shows the plan and asks before changing anything.
 Questions are read from the terminal, so this also works through "curl | bash".
+A native entry that is the same server as a running container, or only leftover
+files, is listed but never chosen by "all" or --yes.
 
 Choosing servers without questions:
   --target native|docker:NAME  Work on this target; repeatable
