@@ -3,6 +3,21 @@
 Versions cover the project as a whole — plugin, web client and Android TV client are released
 together under one number, even when only one of them changed. Each entry says which parts moved.
 
+## 12.3.1 — Fixed tile order
+
+**Plugin** and **web client**.
+
+- Browse Modes tiles are no longer configurable. Every category is always shown, in one fixed
+  order (Categories, Mood & Themes, People, Discover after the primary tiles). The "Browse mode
+  tiles" section is removed from the plugin's Display settings page.
+- The web client no longer requests `/Discover/TileLayout`, so a stale or hand-edited saved
+  order can no longer hide or reshuffle tiles.
+- Compatibility: the `BrowseModeOrder` setting is deprecated and ignored. It is still read from
+  older saved configurations without error and left as it is when settings are saved, and
+  `/Discover/TileLayout` still exists but always returns an empty list, so older web builds fall
+  back to the full built-in order.
+- Android TV is unchanged (it never read the tile layout).
+
 ## 12.3.0 — Jellyfin 12.3 support
 
 **Versioning change.** Releases are now numbered `<Jellyfin major>.<Jellyfin minor>.<patch>`. The

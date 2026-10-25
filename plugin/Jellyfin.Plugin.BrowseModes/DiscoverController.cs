@@ -245,19 +245,20 @@ public class DiscoverController : ControllerBase
     }
 
     /// <summary>
-    /// Gets the browse-mode tile keys in display order, as configured by the administrator.
+    /// Gets the browse-mode tile keys. Deprecated: always returns an empty list.
     /// </summary>
     /// <remarks>
-    /// The client applies this order and hides any mode whose key is not listed. The plugin
-    /// itself only stores the list; the meaning of each key lives in the client.
+    /// Clients show every category in one fixed order, so there is no longer a configurable
+    /// layout. The endpoint remains so older web builds that still request it keep working; an
+    /// empty list means "use the built-in order with every category shown".
     /// </remarks>
-    /// <response code="200">The ordered tile keys returned.</response>
-    /// <returns>The ordered browse-mode tile keys.</returns>
+    /// <response code="200">An empty list, always.</response>
+    /// <returns>An empty list.</returns>
     [HttpGet("TileLayout")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public ActionResult<List<string>> GetTileLayout()
     {
-        return Ok(Plugin.Instance?.Configuration.BrowseModeOrder ?? new List<string>());
+        return Ok(new List<string>());
     }
 
     /// <summary>

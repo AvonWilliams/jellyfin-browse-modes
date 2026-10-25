@@ -3,25 +3,11 @@
 <head>
     <title>Browse Modes</title>
     <style>
-        /* Shared flex base for the JS-built editor rows. */
-        .tileEditorRow,
         .sourceRow {
             display: flex;
             align-items: center;
             gap: 8px;
             padding: 4px 0;
-        }
-        .tileEditorRow button {
-            flex: 0 0 36px;
-            height: 2.4em;
-            padding: 0;
-        }
-        .tileEditorRow .tileLabelCell {
-            flex: 1 1 auto;
-            min-width: 0;
-            display: flex;
-            align-items: center;
-            gap: 8px;
         }
         /* Source editor column layout; header and data rows share these widths. */
         .sourceRow .srcEnabled { flex: 0 0 72px; }
@@ -43,7 +29,6 @@
         /* JS-built native checkboxes: keep them visible and clickable even if a
            dashboard/global rule tries to hide native checkboxes, plus the
            dashboard accent color and focus ring. */
-        .tileEditorRow input[type=checkbox],
         .sourceRow input[type=checkbox] {
             accent-color: var(--jf-palette-primary-main, #00a4dc);
             width: 1.2em;
@@ -54,7 +39,6 @@
             appearance: auto;
             pointer-events: auto;
         }
-        .tileEditorRow input:focus-visible,
         .sourceRow input:focus-visible {
             outline: 2px solid var(--jf-palette-action-focus, var(--jf-palette-primary-main, #00a4dc));
             outline-offset: 2px;
@@ -236,15 +220,6 @@
                             </div>
                         </div>
                     </div>
-
-                    <div class="bmSection">
-                        <div class="bmSectionTitle">Browse mode tiles</div>
-                        <div class="fieldDescription">
-                            Reorder the tiles with the arrows and uncheck any you want hidden. The web
-                            client applies this order. All is your original list.
-                        </div>
-                        <div id="TileEditor"></div>
-                    </div>
                 </div>
 
                 <div>
@@ -260,21 +235,6 @@
         (function () {
             var pluginId = '0d5f6a1e-3b7c-4c62-9a4d-2e8f1b6c9a37';
 
-            // Keys are the web client's BrowseMode enum values; labels are for this editor only.
-            // The home grid is six primary tiles followed by the four thematic meta groups.
-            var ALL_MODES = [
-                { key: 'all', label: 'All' },
-                { key: 'trending', label: 'Trending' },
-                { key: 'toprated', label: 'Top Rated' },
-                { key: 'newreleases', label: 'New Releases' },
-                { key: 'justadded', label: 'Just Added' },
-                { key: 'random', label: 'Random' },
-                { key: 'bycategories', label: 'Categories' },
-                { key: 'byvibe', label: 'Mood & Themes' },
-                { key: 'bypeople', label: 'People' },
-                { key: 'byquality', label: 'Discover' }
-            ];
-
             // The snapshot ranked-list sources the plugin serves alongside TMDb.
             var SOURCES = [
                 { key: 'imdb', label: 'IMDb' },
@@ -286,85 +246,8 @@
                 { key: 'trakt', label: 'Trakt' }
             ];
 
-            // The editor's working state: every mode, in display order, with an enabled flag.
-            var modes = [];
-
             // The source editor's working state.
             var sources = [];
-
-            function renderTileEditor() {
-                var container = document.querySelector('#TileEditor');
-                container.innerHTML = '';
-
-                modes.forEach(function (entry, index) {
-                    var row = document.createElement('div');
-                    row.className = 'tileEditorRow';
-
-                    var up = document.createElement('button');
-                    up.type = 'button';
-                    up.textContent = '↑';
-                    up.disabled = index === 0;
-                    up.addEventListener('click', function () { moveMode(index, -1); });
-
-                    var down = document.createElement('button');
-                    down.type = 'button';
-                    down.textContent = '↓';
-                    down.disabled = index === modes.length - 1;
-                    down.addEventListener('click', function () { moveMode(index, 1); });
-
-                    var checkbox = document.createElement('input');
-                    checkbox.type = 'checkbox';
-                    checkbox.checked = entry.enabled;
-                    checkbox.addEventListener('change', function () { entry.enabled = checkbox.checked; });
-
-                    var labelCell = document.createElement('label');
-                    labelCell.className = 'tileLabelCell';
-                    labelCell.appendChild(checkbox);
-
-                    var label = document.createElement('span');
-                    label.textContent = entry.label;
-                    labelCell.appendChild(label);
-
-                    row.appendChild(up);
-                    row.appendChild(down);
-                    row.appendChild(labelCell);
-                    container.appendChild(row);
-                });
-            }
-
-            function moveMode(index, delta) {
-                var target = index + delta;
-                if (target < 0 || target >= modes.length) {
-                    return;
-                }
-
-                var tmp = modes[index];
-                modes[index] = modes[target];
-                modes[target] = tmp;
-                renderTileEditor();
-            }
-
-            function initModes(order) {
-                var enabledKeys = (order && order.length) ? order : ALL_MODES.map(function (m) { return m.key; });
-                var enabledSet = {};
-                enabledKeys.forEach(function (key) { enabledSet[key] = true; });
-
-                var result = [];
-                enabledKeys.forEach(function (key) {
-                    var def = ALL_MODES.filter(function (m) { return m.key === key; })[0];
-                    if (def) {
-                        result.push({ key: key, label: def.label, enabled: true });
-                    }
-                });
-
-                ALL_MODES.forEach(function (def) {
-                    if (!enabledSet[def.key]) {
-                        result.push({ key: def.key, label: def.label, enabled: false });
-                    }
-                });
-
-                modes = result;
-            }
 
             function renderSourceEditor() {
                 var container = document.querySelector('#SourceEditor');
@@ -471,8 +354,6 @@
                         document.querySelector('#TopRatedMaxRank').value = config.TopRatedMaxRank || 0;
                         document.querySelector('#ShowMissing').checked = config.ShowMissing !== false;
                         document.querySelector('#MaxMissing').value = (config.MaxMissing === undefined ? 10 : config.MaxMissing);
-                        initModes(config.BrowseModeOrder);
-                        renderTileEditor();
                         initSources(config.Sources);
                         Dashboard.hideLoadingMsg();
                     });
@@ -490,7 +371,6 @@
                         config.TopRatedMaxRank = parseInt(document.querySelector('#TopRatedMaxRank').value, 10) || 0;
                         config.ShowMissing = document.querySelector('#ShowMissing').checked;
                         config.MaxMissing = parseInt(document.querySelector('#MaxMissing').value, 10) || 0;
-                        config.BrowseModeOrder = modes.filter(function (m) { return m.enabled; }).map(function (m) { return m.key; });
                         config.Sources = sources.map(function (s) {
                             return { Key: s.key, Kind: s.kind, Enabled: s.Enabled, Url: s.Url, AllowScrape: s.AllowScrape };
                         });

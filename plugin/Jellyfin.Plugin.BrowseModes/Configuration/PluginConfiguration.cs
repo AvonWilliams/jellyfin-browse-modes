@@ -92,12 +92,12 @@ public class PluginConfiguration : BasePluginConfiguration
     };
 
     /// <summary>
-    /// Gets or sets the browse-mode tile keys in display order. Keys not listed are hidden.
+    /// Gets or sets the browse-mode tile keys. Deprecated and ignored.
     /// </summary>
     /// <remarks>
-    /// The keys are the client's <c>BrowseMode</c> enum values. An empty list means the client
-    /// should use its built-in order and visibility. The plugin stores the list but does not
-    /// interpret it; the web client reads it from <c>/Discover/TileLayout</c>.
+    /// Clients now always show every category in one fixed order, so this list has no effect and
+    /// the settings page no longer edits it. The property is kept only so configuration files
+    /// saved by earlier versions still load, and is preserved untouched when settings are saved.
     /// </remarks>
     public List<string> BrowseModeOrder { get; set; } = new List<string>();
 }
