@@ -3,6 +3,32 @@
 Versions cover the project as a whole — plugin, web client and Android TV client are released
 together under one number, even when only one of them changed. Each entry says which parts moved.
 
+## 12.3.2 — Fast People lists
+
+**Plugin** and **web client**. Android TV is unchanged for now (its change is specified in
+`ATV-PEOPLE-INDEX.md` next to this repository).
+
+- The Actors, Directors and Writers pages open as fast in a library with tens of thousands of
+  people as in a small one. The plugin keeps a people index (people, title counts, image tags per
+  library and kind) in its own `browse-modes.db`, built by the "BM: Refresh browse mode counts"
+  task and rebuilt in the background a few minutes after the library changes. The web client pages
+  it 100 at a time as you scroll.
+- The sort pills (A-Z, Z-A, Most items, Fewest items) are now correct for every person; before they
+  only covered the first 500. New A-Z jump bar on these pages.
+- New endpoint `GET /Discover/People` (`parentId`, `kind`, `sort`, `startIndex`, `limit` up to 500,
+  `nameStartsWith`, `includeLetters`). Users who cannot see the whole library (parental rating,
+  blocked tags, library access) get the same answer computed from the titles they can see, so a name
+  or count never reveals a title they cannot open. The same applies until the index is first built,
+  and if the database cannot be read.
+- `/Discover/Counts` is unchanged for other clients; its person counts are now filled from the
+  index instead of scanning the library once per person kind.
+- Compatibility: the new web client falls back to the previous per-person requests on a 12.3.1 or
+  older plugin, and the older web client keeps working against the new plugin. The new tables are
+  added to `browse-modes.db` by a versioned migration; existing data is untouched and the index can
+  be deleted at any time.
+- A credit with no person item in the library (not yet created) is left out of the People lists,
+  as the server's own person list does.
+
 ## 12.3.1 — Fixed tile order
 
 **Plugin** and **web client**.

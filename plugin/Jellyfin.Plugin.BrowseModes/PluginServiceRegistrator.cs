@@ -26,5 +26,12 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
 
         // Singleton poster cache; the fetcher writes to it and the controller serves from it.
         serviceCollection.AddSingleton<PosterStore>();
+
+        // The people index: stored per library in the same SQLite file, built by the counts task
+        // and rebuilt in the background after library changes.
+        serviceCollection.AddSingleton<PersonIndexStore>();
+        serviceCollection.AddSingleton<PersonIndexBuilder>();
+        serviceCollection.AddSingleton<LivePeopleCache>();
+        serviceCollection.AddHostedService<PersonIndexService>();
     }
 }
