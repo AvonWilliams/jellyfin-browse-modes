@@ -1,0 +1,10 @@
+{
+    "schema": 1,
+    "releases": {
+        "12.2": {
+            "plugin": "2.4.2",
+            "web": "2.4.2",
+            "webSha256": "65123d88338acb4cfae18fd8a6b2d37f52a75d709ea02549dc393cea6552e0bb"
+        }
+    }
+}
