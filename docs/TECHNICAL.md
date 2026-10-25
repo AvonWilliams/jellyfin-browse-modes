@@ -541,7 +541,7 @@ and cannot conflict. The risk is concentrated in the six touched files.
 Usually nothing to do. The plugin is ordinary source in this repo and is not a patch against
 anything, so a new Jellyfin release only matters if it breaks compatibility.
 
-On a new Jellyfin version:
+On a new Jellyfin version, follow the release runbook in [`RELEASING.md`](../RELEASING.md). In short:
 
 1. Bump the four `Jellyfin.*` `PackageReference` versions in the `.csproj` to match, and check
    they exist on nuget.org first — the tag naming is inconsistent (`v12.0-rc3` on GitHub,
@@ -600,9 +600,10 @@ their contents. The `git reset` afterwards returns the index to how it was.
 ## 8. Building
 
 The plugin needs only the .NET SDK (10.0.x). The two clients need a JDK, the Android SDK and
-Node >= 24, none of which are typically on `PATH` — the reference setup unpacks them as tarballs
-into a `.toolchain/` directory (JDK 21.0.12, Android SDK platform-36 + build-tools 36,
-Node v24.9.0 / npm 11.6.0), so no sudo is needed and deleting the directory reverses the lot.
+Node >= 24.11 (current Jellyfin web releases require it), none of which are typically on `PATH` —
+the reference setup unpacks them as tarballs into a `.toolchain/` directory (JDK 21.0.12,
+Android SDK platform-36 + build-tools 36, Node 24.11 or newer with npm 11), so no sudo is needed
+and deleting the directory reverses the lot.
 
 ```bash
 # Plugin  (needs only the dotnet SDK, no local toolchain)
@@ -611,7 +612,7 @@ dotnet build -c Release                     # -> bin/Release/net10.0/ (3 DLLs)
 
 # Web  (also updates the phone app)
 cd jellyfin-web
-export PATH=$PWD/../.toolchain/node-v24.9.0-linux-x64/bin:$PATH
+export PATH=$PWD/../.toolchain/node-v24.11.0-linux-x64/bin:$PATH   # any Node >= 24.11
 npm ci && npm run build:production          # ~46s -> dist/
 
 # Android TV
