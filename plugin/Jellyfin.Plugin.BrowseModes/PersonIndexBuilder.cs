@@ -144,7 +144,8 @@ public sealed class PersonIndexBuilder
                     continue;
                 }
 
-                var personId = credit.Id.IsEmpty() ? _libraryManager.GetPersonId(credit.Name) : credit.Id;
+                // The id of the person's own item (what a card links to), not the credit's id.
+                var personId = _libraryManager.GetPersonId(credit.Name.Trim());
                 if (!people.TryGetValue(personId, out var aggregate))
                 {
                     aggregate = new PersonAggregate(credit.Name.Trim());
@@ -176,7 +177,12 @@ public sealed class PersonIndexBuilder
         var rows = new List<PersonIndexRow>(people.Count + (people.Count / 2));
         foreach (var (personId, aggregate) in people)
         {
-            tagCache.TryGetValue(personId, out var tag);
+            // A credit without a person item (not created yet, or removed) has nothing to open.
+            if (!tagCache.TryGetValue(personId, out var tag))
+            {
+                continue;
+            }
+
             var entry = new PersonIndexEntry(personId, aggregate.Name, aggregate.TitleCount, tag);
             if ((aggregate.Kinds & 1) != 0)
             {
@@ -380,11 +386,6 @@ public sealed class PersonIndexBuilder
         foreach (var chunk in missing.Chunk(1000))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            foreach (var id in chunk)
-            {
-                tagCache[id] = null;
-            }
-
             var persons = _libraryManager.GetItemList(new InternalItemsQuery
             {
                 IncludeItemTypes = [BaseItemKind.Person],
