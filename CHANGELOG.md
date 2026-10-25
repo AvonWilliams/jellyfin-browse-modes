@@ -27,11 +27,26 @@ tag now builds only the ABI of its own Jellyfin major.minor.
   file, backs up what it replaces, health-checks the server after the restart and rolls back on
   failure. Takes a lock so cron and manual runs cannot overlap.
 - New flags `--dry-run`, `--status`, `--auto`, `--enable-auto-update`, `--disable-auto-update`.
-  Auto-update (native installs only, off by default) installs a root-owned local copy of the script
-  and one daily cron line; see the README.
+  Auto-update (off by default) installs a local copy of the script and one daily cron line per
+  server; see the README.
+- Docker support is now complete: `--docker NAME` reads the version from inside the container,
+  backs up the container's web root and plugin to the host, copies the verified bundle into the
+  running container, restarts it, health-checks and rolls back on failure. `--auto --docker NAME`
+  and `--enable-auto-update --docker NAME` (one marked cron line per container, `PATH` set for
+  docker) work, and `--disable-auto-update [--docker NAME | --all]` removes only the matching jobs.
+  Recreating a container discards the web bundle; the next scheduled run re-applies it when
+  `compat.json` has an entry for the new version.
+- Interactive mode: with no target the script discovers the native install and Docker containers
+  (official and linuxserver layouts, running or stopped), shows version, compatibility and what is
+  installed, lets you pick servers (`1`, `1,3`, `1-3`, `all`, `q`), shows a plan and asks before
+  changing anything. New flags `--target`, `--native`, `--yes`, `--all`. Several servers run
+  independently with their own backup, health check and rollback. Every install run ends with a
+  per-server summary and a nonzero exit code if any server failed. Questions are read from the
+  terminal, so `curl | bash` works.
 - New `compat.json` (Jellyfin 12.2 -> 2.4.2 listed; 12.3 is added once 12.3.0 is released),
   `RELEASING.md` runbook, a daily workflow that opens an issue when an unlisted Jellyfin release
-  appears, and `tests/test-installer.sh`.
+  appears, and the test scripts `tests/test-installer.sh`, `tests/test-docker.sh` and
+  `tests/test-interactive.sh`.
 
 ## 1.0.2.0 — 2026-08-02
 

@@ -227,7 +227,7 @@ container from step 3, still up):
 
 ```bash
 python3 -m json.tool compat.json >/dev/null && python3 -m json.tool manifest.json >/dev/null
-tests/test-installer.sh
+tests/test-installer.sh && tests/test-docker.sh && tests/test-interactive.sh
 BM_RAW_BASE=file://$PWD BM_ALLOW_LOCAL_URLS=1 ./install-browse-modes.sh --dry-run --host localhost --port 8098   # the <mm> test container
 ```
 
@@ -267,5 +267,28 @@ is published. That is why fixing forward is the only reliable route.
   start Jellyfin, and turn auto-update off until the fix is out
   (`sudo bash /usr/local/lib/browse-modes/updater.sh --disable-auto-update`).
   If the server fails to come back right after an update, the updater rolls back by itself.
+  For a Docker container the backups are under `.../backups/docker-<name>/<timestamp>/`, and the
+  job is turned off with `... updater.sh --disable-auto-update --docker <name>` (or `--all`).
 - **Plugin catalog (Dashboard -> Catalog):** remove the `manifest.json` entry for the version and
   push.
+
+## How the installer behaves in Docker (for maintainers)
+
+Worth knowing when you decide what to put in `compat.json`:
+
+- A Docker target is updated by copying the verified web bundle into the **running container** and
+  restarting it. The bundle therefore disappears when the container is recreated (image update,
+  Watchtower). The next scheduled `--auto --docker <name>` run re-applies it if `compat.json` has an
+  entry for the new Jellyfin version. Until then (up to a day) such users have stock web, which is
+  why an entry should be added as soon as a release is tested.
+- Removing an entry (the kill switch) stops all installers, native and Docker, from offering that
+  release. Containers that already took it are not changed.
+- The plugin is written into the container's config volume (from the host path when it is a bind
+  mount, otherwise with `docker cp`), so it survives recreation.
+- The web root is found per container (`JELLYFIN_WEB_DIR`, then `/jellyfin/jellyfin-web`, then
+  `/usr/share/jellyfin/web`, then `/usr/lib/jellyfin/bin/jellyfin-web`); the plugin directory is
+  `<data dir>/plugins`, or `<data dir>/data/plugins` when only that exists (linuxserver layout, not
+  yet tested against a real linuxserver image).
+- Tests: `tests/test-installer.sh` (native), `tests/test-docker.sh` (stub `docker`, fake container
+  filesystem), `tests/test-interactive.sh` (discovery, selection, summary). All run in a scratch
+  directory and touch nothing outside it.

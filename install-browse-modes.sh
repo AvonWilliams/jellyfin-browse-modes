@@ -1410,7 +1410,7 @@ print_candidates() {
   echo "Jellyfin servers found on this machine:"
   for rec in "${CAND[@]}"; do
     printf '  %d) %s%s\n' "$i" "$(rf "$rec" 2)" "$([ "$(rf "$rec" 2)" = docker ] && printf ': %s (image %s)' "$(rf "$rec" 3)" "$(rf "$rec" 16)")"
-    printf '       Jellyfin %s, %s, %s\n' "$(rf "$rec" 5)" "$(rf "$rec" 4)" "$(rf "$rec" 6)"
+    printf '       Jellyfin %s, %s%s\n' "$(rf "$rec" 5)" "$(rf "$rec" 4)" "$([ -n "$(rf "$rec" 6)" ] && printf ', %s' "$(rf "$rec" 6)")"
     printf '       Compatibility: %s\n' "$(rf "$rec" 8)"
     printf '       Installed now: %s\n' "$(rf "$rec" 9)"
     if [ -n "$(rf "$rec" 10)" ]; then printf '       Note: %s\n' "$(rf "$rec" 10)"; fi
