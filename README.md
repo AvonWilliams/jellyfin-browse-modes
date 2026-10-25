@@ -187,7 +187,7 @@ keeping it would have meant forking the server. Dropping one tile was the better
 
 ## Compatibility
 
-Built against **Jellyfin 12.2** (web client) and **12.0/12.1/12.2** (plugin). Android TV: **0.19.9**.
+Built against **Jellyfin 12.2/12.3** (web client) and **12.0/12.1/12.2/12.3** (plugin). Android TV: **0.19.9**.
 
 > **The plugin works on both 10.11.x and 12.x.** The web client now targets **12.2 only**; the TV
 > client targets 10.11 and 12.x. The 10.11 web backport lives on the `browse-modes-10.11` branch.

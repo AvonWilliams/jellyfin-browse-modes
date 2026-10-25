@@ -3,6 +3,17 @@
 Versions cover the project as a whole — plugin, web client and Android TV client are released
 together under one number, even when only one of them changed. Each entry says which parts moved.
 
+## 2.4.3 — Jellyfin 12.3 support
+
+**Plugin** — Jellyfin 12.3 support.
+
+- New 12.3.0.0 build and `browse-modes_2.4.3_12.3.0.zip` package alongside 12.0/12.1/12.2. Built
+  against the `Jellyfin.*` 12.3.0 packages with no source changes; `TMDbLib` stays at 3.0.0 and the
+  server's EF Core / Microsoft.Extensions packages moved 10.0.11 -> 10.0.12 (compile-time only).
+
+**Installer** — `install-browse-modes.sh` recognises Jellyfin 12.3 and installs the web bundle on
+12.2 and 12.3 (12.0/12.1 stay plugin-only).
+
 ## 1.0.2.0 — 2026-08-02
 
 **Plugin** — backported to Jellyfin 10.11.x (stable).

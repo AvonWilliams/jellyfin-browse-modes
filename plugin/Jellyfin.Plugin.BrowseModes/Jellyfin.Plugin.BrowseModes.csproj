@@ -6,8 +6,8 @@
     <ImplicitUsings>false</ImplicitUsings>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
-    <AssemblyVersion>2.0.2.0</AssemblyVersion>
-    <FileVersion>2.0.2.0</FileVersion>
+    <AssemblyVersion>2.4.3.0</AssemblyVersion>
+    <FileVersion>2.4.3.0</FileVersion>
     <RootNamespace>Jellyfin.Plugin.BrowseModes</RootNamespace>
     <!-- Override with -p:JellyfinVersion=<ver> to target a different server release. -->
     <JellyfinVersion>12.1.0</JellyfinVersion>

@@ -9,6 +9,38 @@
         "imageUrl": "",
         "versions": [
             {
+                "version": "2.4.3",
+                "changelog": "Jellyfin 12.3 support.",
+                "targetAbi": "12.3.0.0",
+                "sourceUrl": "https://github.com/AvonWilliams/jellyfin-browse-modes/releases/download/v2.4.3/browse-modes_2.4.3_12.3.0.zip",
+                "checksum": "PENDING-CI",
+                "timestamp": "PENDING-CI"
+            },
+            {
+                "version": "2.4.3",
+                "changelog": "Jellyfin 12.3 support.",
+                "targetAbi": "12.2.0.0",
+                "sourceUrl": "https://github.com/AvonWilliams/jellyfin-browse-modes/releases/download/v2.4.3/browse-modes_2.4.3_12.2.0.zip",
+                "checksum": "PENDING-CI",
+                "timestamp": "PENDING-CI"
+            },
+            {
+                "version": "2.4.3",
+                "changelog": "Jellyfin 12.3 support.",
+                "targetAbi": "12.1.0.0",
+                "sourceUrl": "https://github.com/AvonWilliams/jellyfin-browse-modes/releases/download/v2.4.3/browse-modes_2.4.3_12.1.0.zip",
+                "checksum": "PENDING-CI",
+                "timestamp": "PENDING-CI"
+            },
+            {
+                "version": "2.4.3",
+                "changelog": "Jellyfin 12.3 support.",
+                "targetAbi": "12.0.0.0",
+                "sourceUrl": "https://github.com/AvonWilliams/jellyfin-browse-modes/releases/download/v2.4.3/browse-modes_2.4.3_12.0.0.zip",
+                "checksum": "PENDING-CI",
+                "timestamp": "PENDING-CI"
+            },
+            {
                 "version": "2.4.2",
                 "changelog": "Person counts now include episode/season credits; tile editor lists the four thematic groups (Categories/Mood & Themes/People/Discover).",
                 "targetAbi": "12.2.0.0",

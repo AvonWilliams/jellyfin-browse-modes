@@ -117,6 +117,7 @@ fi
 
 major_minor=$(printf '%s' "$version" | cut -d. -f1,2)
 case "$major_minor" in
+  12.3) abi="12.3.0" ;;
   12.2) abi="12.2.0" ;;
   12.1) abi="12.1.0" ;;
   12.0) abi="12.0.0" ;;
@@ -124,11 +125,11 @@ case "$major_minor" in
 esac
 echo "Detected Jellyfin ${version} (plugin targetAbi ${abi})"
 
-# The browse-modes web fork now targets Jellyfin 12.2 only; on older 12.x
+# The browse-modes web fork targets Jellyfin 12.2 and 12.3; on older 12.x
 # servers the client/server versions mismatch, so install the plugin only
 # unless the caller explicitly asked for web.
-if [ "$major_minor" != "12.2" ] && [ "$WEB_ONLY" -eq 0 ]; then
-  echo "Web bundle skipped: the browse-modes web fork requires Jellyfin 12.2"
+if [ "$major_minor" != "12.2" ] && [ "$major_minor" != "12.3" ] && [ "$WEB_ONLY" -eq 0 ]; then
+  echo "Web bundle skipped: the browse-modes web fork requires Jellyfin 12.2 or 12.3"
   PLUGIN_ONLY=1
 fi
 
