@@ -200,7 +200,7 @@ if [ "$ACTION" = "install" ] && [ "$ALL" -eq 1 ]; then ALL_TARGETS=1; ALL=0; fi
 STATE_DIR_DEFAULT="$STATE_DIR"
 LIB_DIR_DEFAULT="$LIB_DIR"
 LOG_FILE=""; STATE_FILE=""; LOG_TAG=""; base=""
-version=""; major_minor=""
+version=""; major_minor=""; server_id=""
 
 # Points all per-target settings at one target ("native" or "docker:NAME").
 set_target() {
@@ -223,7 +223,7 @@ set_target() {
     LOG_TAG="[docker:${CONTAINER}] "
     if [ "$ADDR_SET" -eq 0 ]; then base="container ${CONTAINER}"; fi
   fi
-  version=""; major_minor=""
+  version=""; major_minor=""; server_id=""
   DK_WEB=""; DK_CFG_HOST=""; DK_NETMODE=""; DK_MOUNTS=""; DK_PLUGINS="plugins"
 }
 
@@ -359,6 +359,8 @@ detect_server() {
   [ -n "$version" ] || return 2
   major_minor=$(printf '%s' "$version" | cut -d. -f1,2)
   [[ "$major_minor" =~ ^[0-9]+\.[0-9]+$ ]] || return 2
+  server_id=$(printf '%s' "$info" | grep -o '"Id"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 \
+    | sed 's/.*"\([^"]*\)"$/\1/' || true)
 }
 
 # Version of the plugin on disk (meta.json), or empty.
@@ -1405,12 +1407,14 @@ parse_selection() {
 
 # Candidate records, one per server found. Fields, separated by "|":
 # id kind name state version url supported compat installed note prev_plugin
-# prev_web plan_plugin plan_web major_minor image
+# prev_web plan_plugin plan_web major_minor image server_id skip_reason
+# (skip_reason, when set, is why the server is not offered: it is never updated
+# by "all", --yes or a default choice).
 CAND=()
 
 # Prints one candidate record for target $1 (image name $2 for Docker).
 probe_target() {
-  local t="$1" img="${2:-}" state="" ver="" url="" sup=0 compat="" inst="" note="" rc=0 name kind
+  local t="$1" img="${2:-}" state="" ver="" url="" sup=0 compat="" inst="" note="" skip="" sid="" rc=0 name kind
   set_target "$t"
   C_PLUGIN=""; C_WEB=""; C_WEB_SHA=""
   if [ -n "$CONTAINER" ]; then
@@ -1426,7 +1430,18 @@ probe_target() {
   else
     kind="native"; name="native install"
     url="$base"
-    if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet jellyfin 2>/dev/null; then state="running"; else state="stopped"; fi
+    if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet jellyfin 2>/dev/null; then
+      state="running"
+    elif native_installed; then
+      state="stopped"
+    elif detect_server >/dev/null 2>&1; then
+      state="running"     # no service or package of ours, but something answers
+    else
+      # Only leftover directories: no service, no package, nothing listening.
+      state="stale"
+      skip="stale files only: no Jellyfin service or package is installed and nothing answers at ${base}"
+      note="$skip"
+    fi
   fi
   if [ "$state" = "running" ] && { [ -z "$CONTAINER" ] || [ "$rc" -eq 0 ]; }; then
     if detect_server; then
@@ -1437,6 +1452,8 @@ probe_target() {
   elif [ -z "$CONTAINER" ] && [ "$state" = "stopped" ]; then
     note="stopped: start Jellyfin to update it"
   fi
+  sid=""
+  if [ -n "$ver" ]; then sid="$server_id"; fi
   if [ -n "$ver" ]; then
     rc=0; load_compat || rc=$?
     case "$rc" in
@@ -1457,12 +1474,13 @@ probe_target() {
     pw="${pw} (files changed, will be installed again)"
   fi
   inst="plugin ${pp:-none}, web bundle ${pw:-none}"
-  printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
+  printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
     "$t" "$kind" "$name" "$state" "${ver:-unknown}" "$url" "$sup" "$compat" "$inst" "$note" \
-    "$pp" "$pw" "$C_PLUGIN" "$C_WEB" "$major_minor" "$img"
+    "$pp" "$pw" "$C_PLUGIN" "$C_WEB" "$major_minor" "$img" "$sid" "$skip"
 }
 
-native_present() {
+# A native Jellyfin install: the systemd unit or the Debian/Ubuntu package.
+native_installed() {
   if command -v systemctl >/dev/null 2>&1 && systemctl cat jellyfin.service >/dev/null 2>&1; then return 0; fi
   if command -v dpkg-query >/dev/null 2>&1; then
     local pkg
@@ -1470,7 +1488,40 @@ native_present() {
       if dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q 'install ok installed'; then return 0; fi
     done
   fi
-  [ -d "$web_dir" ]
+  return 1
+}
+
+# Worth listing: an install, or at least its web directory (which may be a
+# leftover; probe_target tells the two apart).
+native_present() {
+  native_installed || [ -d "$web_dir" ]
+}
+
+# Sets field $2 of record $1 to $3 and prints the record.
+rec_set() {
+  printf '%s' "$1" | awk -F'|' -v OFS='|' -v n="$2" -v v="$3" '{ $n = v; print }'
+}
+
+# A host-network (or published-port) container and the native entry can be one
+# and the same server: both answer at the same address with the same server Id.
+# The native entry is then not offered, so "all" never touches one server twice.
+mark_same_servers() {
+  local i j nat dk
+  for i in "${!CAND[@]}"; do
+    nat="${CAND[$i]}"
+    [ "$(rf "$nat" 2)" = "native" ] && [ "$(rf "$nat" 4)" = "running" ] && [ -n "$(rf "$nat" 17)" ] || continue
+    for j in "${!CAND[@]}"; do
+      dk="${CAND[$j]}"
+      [ "$(rf "$dk" 2)" = "docker" ] && [ "$(rf "$dk" 4)" = "running" ] || continue
+      if [ "$(rf "$dk" 17)" = "$(rf "$nat" 17)" ] && [ "$(rf "$dk" 6)" = "$(rf "$nat" 6)" ]; then
+        nat=$(rec_set "$nat" 7 0)
+        nat=$(rec_set "$nat" 18 "same server as $(rf "$dk" 1): it answers at $(rf "$nat" 6) with the same server Id, so update it through the container")
+        nat=$(rec_set "$nat" 10 "same server as $(rf "$dk" 1) (listed below); not offered here")
+        CAND[$i]="$nat"
+        break
+      fi
+    done
+  done
 }
 
 # Finds the native install and Docker containers that run Jellyfin. A container
@@ -1499,17 +1550,20 @@ discover() {
       CAND+=("$rec")
     done < <(docker ps -a --format '{{.Names}}|{{.Image}}|{{.State}}' 2>/dev/null || true)
   fi
+  mark_same_servers
 }
 
 # Field n (1-based) of a record.
 rf() { printf '%s' "$1" | cut -d'|' -f"$2"; }
 
 print_candidates() {
-  local i=1 rec
+  local i=1 rec state_label
   echo "Jellyfin servers found on this machine:"
   for rec in "${CAND[@]}"; do
     printf '  %d) %s%s\n' "$i" "$(rf "$rec" 2)" "$([ "$(rf "$rec" 2)" = docker ] && printf ': %s (image %s)' "$(rf "$rec" 3)" "$(rf "$rec" 16)")"
-    printf '       Jellyfin %s, %s%s\n' "$(rf "$rec" 5)" "$(rf "$rec" 4)" "$([ -n "$(rf "$rec" 6)" ] && printf ', %s' "$(rf "$rec" 6)")"
+    state_label=$(rf "$rec" 4)
+    if [ "$state_label" = "stale" ]; then state_label="not running (stale files)"; fi
+    printf '       Jellyfin %s, %s%s\n' "$(rf "$rec" 5)" "$state_label" "$([ -n "$(rf "$rec" 6)" ] && printf ', %s' "$(rf "$rec" 6)")"
     printf '       Compatibility: %s\n' "$(rf "$rec" 8)"
     printf '       Installed now: %s\n' "$(rf "$rec" 9)"
     if [ -n "$(rf "$rec" 10)" ]; then printf '       Note: %s\n' "$(rf "$rec" 10)"; fi
@@ -1522,7 +1576,9 @@ plan_line() {
   local rec="$1" id bdir
   id=$(rf "$rec" 1)
   bdir=$(set_target "$id"; if [ -n "$CONTAINER" ]; then printf '%s/backups/docker-%s' "$STATE_DIR" "$CONTAINER"; else printf '%s/backups' "$STATE_DIR"; fi)
-  if [ "$(rf "$rec" 4)" != "running" ]; then
+  if [ "$(rf "$rec" 4)" = "stale" ] || [ -n "$(rf "$rec" 18)" ]; then
+    echo "  - $id: skipped ($(rf "$rec" 18)); nothing changes"
+  elif [ "$(rf "$rec" 4)" != "running" ]; then
     echo "  - $id: skipped (not running); nothing changes"
   elif [ "$(rf "$rec" 7)" != "1" ]; then
     echo "  - $id: skipped ($(rf "$rec" 8)$([ -n "$(rf "$rec" 10)" ] && printf '; %s' "$(rf "$rec" 10)")); nothing changes"

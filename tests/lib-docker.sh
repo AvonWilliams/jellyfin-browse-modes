@@ -25,7 +25,11 @@ class H(http.server.BaseHTTPRequestHandler):
         if os.path.exists(marker) and open(marker).read().strip() == "9.9.9":
             self.send_response(503); self.end_headers(); return
         v = open(vfile).read().strip()
-        body = ('{"ServerName":"t","Version":"%s","Id":"x"}' % v).encode()
+        # Server Id: <work>/ctr/NAME/sid (or <work>/native_sid), else "id-NAME", so
+        # different servers differ unless a test makes them the same server.
+        sidf = os.path.join(work, "native_sid") if ctr == "native" else os.path.join(work, "ctr", ctr, "sid")
+        sid = open(sidf).read().strip() if os.path.exists(sidf) else "id-" + ctr
+        body = ('{"ServerName":"t","Version":"%s","Id":"%s"}' % (v, sid)).encode()
         self.send_response(200); self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
     def log_message(self, *a): pass

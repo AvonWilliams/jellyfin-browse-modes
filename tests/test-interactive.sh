@@ -40,13 +40,14 @@ chmod +x "$work/bin/systemctl"
 echo native > "$work/default_ctr"
 
 # run_ix <answers|-> <args...>: answers is a file of lines fed as terminal input
-# ("-" for none). JELLYFIN_PORT points the native check at the fake server.
+# ("-" for none). JELLYFIN_PORT points the native check at the fake server (or at
+# $IX_PORT, for a native address nothing listens on).
 run_ix() {
   local ans="$1"; shift
   echo native > "$work/default_ctr"   # requests without a container header are the native install's
   local tty_env=()
   if [ "$ans" != "-" ]; then tty_env=(BM_TTY="$ans"); fi
-  env PATH="$work/bin:$PATH" JELLYFIN_PORT="$port" \
+  env PATH="$work/bin:$PATH" JELLYFIN_PORT="${IX_PORT:-$port}" \
     BM_RAW_BASE="file://$work/rel/raw" BM_PLUGIN_REL_BASE="file://$work/rel/plugin" \
     BM_WEB_REL_BASE="file://$work/rel/web" BM_ALLOW_LOCAL_URLS=1 \
     BM_STATE_DIR="$work/state" BM_LIB_DIR="$work/lib" BM_SKIP_ROOT_CHECK=1 \
@@ -61,7 +62,7 @@ answers() { printf '%s\n' "$@" > "$work/answers"; }
 
 reset_all() {
   rm -rf "${work:?}/ctr" "${work:?}/vol" "${work:?}/volumes" "${work:?}/plugins" "${work:?}/web" "${work:?}/crontab.txt"
-  rm -f "$work/native_present" "$work/native_active" "$work/systemctl.log"
+  rm -f "$work/native_present" "$work/native_active" "$work/systemctl.log" "$work/native_sid"
   reset_state
 }
 native_up() {
@@ -249,6 +250,65 @@ check "mix: one failed, one skipped -> exit 1" test "$rc" -eq 1
 reset_all; native_up; new_ctr jfa; echo 12.9.1 > "$work/ctr/jfa/version"
 run_ix - --dry-run --target native --target docker:jfa; rc=$?
 check "mix: dry run of one, skipped other -> exit 0" test "$rc" -eq 0
+
+# ---- same server twice, stale leftovers ---------------------------------------
+echo "== same server / stale files"
+# A host-network container serves the same address as the native entry: one server.
+reset_all; native_up; new_ctr jfa
+echo shared-id > "$work/native_sid"; echo shared-id > "$work/ctr/jfa/sid"
+answers q
+run_ix "$work/answers"
+check "same server: native entry says it is the same server as the container" contains "$work/out" "same server as docker:jfa"
+check "same server: native entry is not offered" contains "$work/out" "not offered here"
+answers a y n
+run_ix "$work/answers"; rc=$?
+check "same server: a updates the container only" bash -c "! grep -q STOCK '$(webdir jfa)/index.html' && grep -q NATIVESTOCK '$work/web/index.html'"
+check "same server: a never stopped the native service" bash -c "[ ! -e '$work/systemctl.log' ] || ! grep -q '^stop' '$work/systemctl.log'"
+check "same server: container restarted exactly once" test "$(restarts)" -eq 1
+check "same server: exit 0" test "$rc" -eq 0
+reset_all; native_up; new_ctr jfa
+echo shared-id > "$work/native_sid"; echo shared-id > "$work/ctr/jfa/sid"
+run_ix - --all; rc=$?
+check "same server: --all touches it once, through the container" bash -c "! grep -q STOCK '$(webdir jfa)/index.html' && grep -q NATIVESTOCK '$work/web/index.html' && [ \"\$(grep -c '^restart' '$work/docker.log')\" = 1 ]"
+reset_all; native_up; new_ctr jfa
+echo shared-id > "$work/native_sid"; echo shared-id > "$work/ctr/jfa/sid"
+run_ix - --yes
+check "same server: --yes touches it once" bash -c "grep -q NATIVESTOCK '$work/web/index.html' && ! grep -q STOCK '$(webdir jfa)/index.html'"
+answers 1 y
+run_ix "$work/answers"; rc=$?
+check "same server: picking the native entry by number changes nothing" bash -c "grep -q NATIVESTOCK '$work/web/index.html'"
+check "same server: the plan says why it is skipped" contains "$work/out" "- native: skipped (same server as docker:jfa"
+# Same address, different Id: two servers, both offered.
+reset_all; native_up; new_ctr jfa
+run_ix - --all
+check "different server Ids: both are updated" bash -c "grep -q 12.3.0 '$work/web/index.html' && ! grep -q STOCK '$(webdir jfa)/index.html'"
+# A leftover web directory: no service, no package, nothing listening.
+reset_all; new_ctr jfa
+mkdir -p "$work/web" "$work/plugins"; echo LEFTOVER > "$work/web/index.html"
+answers q
+IX_PORT=1 run_ix "$work/answers"
+check "stale files: listed as not running" contains "$work/out" "not running (stale files)"
+check "stale files: the note explains" contains "$work/out" "stale files only"
+IX_PORT=1 run_ix - --all; rc=$?
+check "stale files: --all leaves them alone" bash -c "grep -q LEFTOVER '$work/web/index.html' && { [ ! -e '$work/systemctl.log' ] || ! grep -q '^stop' '$work/systemctl.log'; }"
+check "stale files: --all still updates the container" bash -c "! grep -q STOCK '$(webdir jfa)/index.html'"
+check "stale files: exit 0" test "$rc" -eq 0
+answers 1
+IX_PORT=1 run_ix "$work/answers"; rc=$?
+check "stale files: picking them changes nothing" grep -q LEFTOVER "$work/web/index.html"
+check "stale files: the plan says why" contains "$work/out" "- native: skipped (stale files only"
+reset_all
+mkdir -p "$work/web" "$work/plugins"; echo LEFTOVER > "$work/web/index.html"
+IX_PORT=1 run_ix - --yes; rc=$?
+check "only stale files found: nothing changed" grep -q LEFTOVER "$work/web/index.html"
+check "only stale files found: exit 0" test "$rc" -eq 0
+# No service or package but a server answers: not a leftover.
+reset_all
+mkdir -p "$work/web" "$work/plugins"; echo NATIVESTOCK > "$work/web/index.html"
+answers q
+run_ix "$work/answers"
+check "no unit or package but a server answers: shown as running" contains "$work/out" "Jellyfin 12.3.0, running"
+check "no unit or package but a server answers: not called stale" lacks "$work/out" "stale"
 
 # ---- 5. several targets, one fails -------------------------------------------
 echo "== independent targets"
