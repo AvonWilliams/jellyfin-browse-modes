@@ -37,6 +37,8 @@ public class PersonIndexController : ControllerBase
     private const int MaxLimit = 500;
     private const int MaxPrefixLength = 32;
 
+    private static long _lastReadFailureLog = long.MinValue / 2;
+
     private readonly IUserManager _userManager;
     private readonly ILibraryManager _libraryManager;
     private readonly PersonIndexStore _store;
@@ -218,7 +220,14 @@ public class PersonIndexController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "The people index could not be read; using the live path");
+            // Every page request would repeat this, so say it once a minute.
+            var now = Environment.TickCount64;
+            if (now - Interlocked.Read(ref _lastReadFailureLog) > 60_000)
+            {
+                Interlocked.Exchange(ref _lastReadFailureLog, now);
+                _logger.LogWarning(ex, "The people index could not be read; using the live path");
+            }
+
             return null;
         }
     }
