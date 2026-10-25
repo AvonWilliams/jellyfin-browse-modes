@@ -17,6 +17,13 @@ together under one number, even when only one of them changed. Each entry says w
   `/Discover/TileLayout` still exists but always returns an empty list, so older web builds fall
   back to the full built-in order.
 - Android TV is unchanged (it never read the tile layout).
+- Fixed: the snapshot Sources list grew on every settings save and server restart (9 entries
+  became 18, 27, ...), so lists were fetched repeatedly. The saved list is now loaded as-is, and
+  lists already duplicated are collapsed on load (an entry you changed is kept over an untouched
+  default). The saved XML format is unchanged.
+- Fixed: saving the Sources tab merged rows by source name, so a source's second list (for example
+  IMDb Top Rated, Trakt Top Rated) and any extra entries were dropped. Every configured list now
+  has its own row and is saved.
 
 ## 12.3.0 — Jellyfin 12.3 support
 

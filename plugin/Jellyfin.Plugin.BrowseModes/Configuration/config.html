@@ -312,16 +312,24 @@
                 });
             }
 
+            function sourceLabel(key, kind) {
+                var def = SOURCES.filter(function (d) { return d.key === key; })[0];
+                var kindText = String(kind || '').toLowerCase() === 'trending' ? 'Trending'
+                    : String(kind || '').toLowerCase() === 'toprated' ? 'Top Rated' : (kind || '');
+                return (def ? def.label : key) + (kindText ? ' ' + kindText : '');
+            }
+
+            // One row per configured list (key + kind). A source such as IMDb has a trending and a
+            // top-rated list, so rows are not collapsed by key.
             function initSources(list) {
-                sources = SOURCES.map(function (def) {
-                    var existing = (list || []).filter(function (s) { return s.Key === def.key; })[0];
+                sources = (list || []).map(function (existing) {
                     return {
-                        key: def.key,
-                        label: def.label,
-                        kind: existing ? existing.Kind : undefined,
-                        Enabled: existing ? existing.Enabled !== false : true,
-                        Url: existing ? (existing.Url || '') : '',
-                        AllowScrape: existing ? existing.AllowScrape === true : false
+                        key: existing.Key,
+                        label: sourceLabel(existing.Key, existing.Kind),
+                        kind: existing.Kind,
+                        Enabled: existing.Enabled !== false,
+                        Url: existing.Url || '',
+                        AllowScrape: existing.AllowScrape === true
                     };
                 });
                 renderSourceEditor();
