@@ -439,7 +439,10 @@ for m in c.get("Mounts") or []:
   if [ "$w" = "bind" ] && [ -n "$src" ] && [ -d "$src" ]; then
     if [ "$(id -u)" -eq 0 ]; then
       DK_CFG_HOST="$src"
-    elif [ "$(stat -c %u "$src" 2>/dev/null)" = "$(id -u)" ] && [ -w "$src" ]; then
+    elif [ "$(stat -c %u "$src" 2>/dev/null)" = "$(id -u)" ] && [ -w "$src" ] \
+      && [ -z "$(find "$src/plugins" ! -writable -print -quit 2>/dev/null)" ]; then
+      # Not root: only when nothing under plugins/ (often written by a root
+      # container) is out of our reach; otherwise docker cp does the work.
       DK_CFG_HOST="$src"
     fi
   fi
