@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Data.Enums;
+using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Extensions;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
@@ -36,6 +37,7 @@ public sealed class TmdbDiscoverClient : IDisposable
     private readonly Dictionary<string, Dictionary<string, int>> _countsByKey = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DateTime> _countsRefreshed = new(StringComparer.Ordinal);
     private static readonly TimeSpan CountsCacheDuration = TimeSpan.FromHours(24);
+    private readonly object _countsLock = new();
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TmdbDiscoverClient"/> class.
@@ -446,11 +448,14 @@ public sealed class TmdbDiscoverClient : IDisposable
     /// </summary>
     public IReadOnlyDictionary<string, int>? GetCounts(string key)
     {
-        if (_countsByKey.TryGetValue(key, out var counts)
-            && _countsRefreshed.TryGetValue(key, out var refreshed)
-            && DateTime.UtcNow - refreshed < CountsCacheDuration)
+        lock (_countsLock)
         {
-            return counts;
+            if (_countsByKey.TryGetValue(key, out var counts)
+                && _countsRefreshed.TryGetValue(key, out var refreshed)
+                && DateTime.UtcNow - refreshed < CountsCacheDuration)
+            {
+                return counts;
+            }
         }
 
         return null;
@@ -461,8 +466,77 @@ public sealed class TmdbDiscoverClient : IDisposable
     /// </summary>
     public void SetCounts(string key, Dictionary<string, int> counts)
     {
-        _countsByKey[key] = counts;
-        _countsRefreshed[key] = DateTime.UtcNow;
+        lock (_countsLock)
+        {
+            _countsByKey[key] = counts;
+            _countsRefreshed[key] = DateTime.UtcNow;
+        }
+    }
+
+    /// <summary>
+    /// Builds the cache key a picker's counts are stored under.
+    /// </summary>
+    private static string BuildCountsKey(string type, Guid? parentId, BaseItemKind[] itemTypes, PersonKind[]? personTypes)
+    {
+        var scopeId = parentId.HasValue && !parentId.Value.IsEmpty() ? parentId.Value : Guid.Empty;
+        var personScope = type.Equals("personitems", StringComparison.OrdinalIgnoreCase)
+            ? $":{string.Join(',', personTypes ?? [PersonKind.Actor, PersonKind.Director, PersonKind.Writer])}"
+            : string.Empty;
+        return $"{type}:{scopeId}:{string.Join(',', itemTypes)}{personScope}";
+    }
+
+    /// <summary>
+    /// Stores the person counts the people index already knows, under the keys
+    /// <see cref="GetOrBuildCounts"/> reads, so that /Discover/Counts answers the person pickers
+    /// from memory instead of scanning the library once per person kind.
+    /// </summary>
+    /// <param name="libraryId">The library the counts are for.</param>
+    /// <param name="itemTypes">The item types the library is counted as (movies or series).</param>
+    /// <param name="peopleByKind">Name and title count of every person, per credit kind.</param>
+    public void CachePersonCounts(
+        Guid libraryId,
+        BaseItemKind[] itemTypes,
+        IReadOnlyDictionary<PersonKind, IReadOnlyList<(string Name, int TitleCount)>> peopleByKind)
+    {
+        var kinds = new[] { PersonKind.Actor, PersonKind.Director, PersonKind.Writer };
+
+        // "person": how many people each kind has, keyed by the kind name.
+        var kindTotals = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var kind in kinds)
+        {
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (peopleByKind.TryGetValue(kind, out var people))
+            {
+                foreach (var (name, _) in people)
+                {
+                    names.Add(name);
+                }
+            }
+
+            kindTotals[kind.ToString()] = names.Count;
+        }
+
+        SetCounts(BuildCountsKey("person", libraryId, itemTypes, null), kindTotals);
+
+        // "personitems": name → number of titles, per single kind and for all three together.
+        var union = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var kind in kinds)
+        {
+            var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            if (peopleByKind.TryGetValue(kind, out var people))
+            {
+                foreach (var (name, titleCount) in people)
+                {
+                    // Two people can share a name; the name-keyed picker shows the larger count.
+                    counts[name] = counts.TryGetValue(name, out var existing) ? Math.Max(existing, titleCount) : titleCount;
+                    union[name] = union.TryGetValue(name, out var all) ? Math.Max(all, titleCount) : titleCount;
+                }
+            }
+
+            SetCounts(BuildCountsKey("personitems", libraryId, itemTypes, [kind]), counts);
+        }
+
+        SetCounts(BuildCountsKey("personitems", libraryId, itemTypes, null), union);
     }
 
     /// <summary>
@@ -474,11 +548,7 @@ public sealed class TmdbDiscoverClient : IDisposable
     /// </remarks>
     public Dictionary<string, int> GetOrBuildCounts(string type, Guid? parentId, BaseItemKind[] itemTypes, ILibraryManager libraryManager, PersonKind[]? personTypes = null)
     {
-        var scopeId = parentId.HasValue && !parentId.Value.IsEmpty() ? parentId.Value : Guid.Empty;
-        var personScope = type.Equals("personitems", StringComparison.OrdinalIgnoreCase)
-            ? $":{string.Join(',', personTypes ?? [PersonKind.Actor, PersonKind.Director, PersonKind.Writer])}"
-            : string.Empty;
-        var cacheKey = $"{type}:{scopeId}:{string.Join(',', itemTypes)}{personScope}";
+        var cacheKey = BuildCountsKey(type, parentId, itemTypes, personTypes);
         var cached = GetCounts(cacheKey);
         if (cached is not null)
         {
@@ -676,12 +746,13 @@ public sealed class TmdbDiscoverClient : IDisposable
     /// series misses them; the child items are fetched here and their people attributed to the
     /// parent series.
     /// </remarks>
-    private static Dictionary<Guid, IReadOnlyList<PersonInfo>> GetPeopleAcrossItems(
+    internal static Dictionary<Guid, IReadOnlyList<PersonInfo>> GetPeopleAcrossItems(
         IReadOnlyList<BaseItem> items,
         Guid? parentId,
-        ILibraryManager libraryManager)
+        ILibraryManager libraryManager,
+        User? user = null)
     {
-        var childQuery = new InternalItemsQuery
+        var childQuery = new InternalItemsQuery(user)
         {
             IncludeItemTypes = [BaseItemKind.Season, BaseItemKind.Episode],
             Recursive = true

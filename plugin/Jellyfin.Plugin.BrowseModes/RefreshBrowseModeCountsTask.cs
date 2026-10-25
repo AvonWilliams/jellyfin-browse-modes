@@ -23,6 +23,7 @@ public class RefreshBrowseModeCountsTask : IScheduledTask
     private static readonly string[] Types = ["genre", "rating", "tag", "decade", "year", "studio", "person"];
 
     private readonly TmdbDiscoverClient _discoverClient;
+    private readonly PersonIndexBuilder _personIndexBuilder;
     private readonly ILibraryManager _libraryManager;
     private readonly ILogger<RefreshBrowseModeCountsTask> _logger;
 
@@ -30,14 +31,17 @@ public class RefreshBrowseModeCountsTask : IScheduledTask
     /// Initializes a new instance of the <see cref="RefreshBrowseModeCountsTask"/> class.
     /// </summary>
     /// <param name="discoverClient">Instance of <see cref="TmdbDiscoverClient"/>.</param>
+    /// <param name="personIndexBuilder">Instance of <see cref="PersonIndexBuilder"/>.</param>
     /// <param name="libraryManager">Instance of <see cref="ILibraryManager"/>.</param>
     /// <param name="logger">Instance of the <see cref="ILogger{RefreshBrowseModeCountsTask}"/> interface.</param>
     public RefreshBrowseModeCountsTask(
         TmdbDiscoverClient discoverClient,
+        PersonIndexBuilder personIndexBuilder,
         ILibraryManager libraryManager,
         ILogger<RefreshBrowseModeCountsTask> logger)
     {
         _discoverClient = discoverClient;
+        _personIndexBuilder = personIndexBuilder;
         _libraryManager = libraryManager;
         _logger = logger;
     }
@@ -46,7 +50,7 @@ public class RefreshBrowseModeCountsTask : IScheduledTask
     public string Name => "BM: Refresh browse mode counts";
 
     /// <inheritdoc />
-    public string Description => "Pre-computes picker item counts (genre, rating, tag, decade, year, studio, person) for every library.";
+    public string Description => "Pre-computes picker item counts (genre, rating, tag, decade, year, studio, person) and the people index for every library.";
 
     /// <inheritdoc />
     public string Category => "Library";
@@ -75,6 +79,17 @@ public class RefreshBrowseModeCountsTask : IScheduledTask
     public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
     {
         progress.Report(0);
+
+        // People first: one pass fills the people index for every library and, as a by-product,
+        // the person counts below, so those no longer scan the library once per person kind.
+        try
+        {
+            await _personIndexBuilder.BuildAsync(false, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Unable to build the people index");
+        }
 
         try
         {
