@@ -2,9 +2,9 @@
     "schema": 1,
     "releases": {
         "12.3": {
-            "plugin": "12.3.0",
-            "web": "12.3.0",
-            "webSha256": "d40ab66ca897bbcd9c1fe2a886d236cd66eef17e96fc3487ce639ba3dfeccf8b"
+            "plugin": "12.3.1",
+            "web": "12.3.1",
+            "webSha256": "8fb542e5d041556f5cc0b03c3cccb7fdb305f3d5784304081f8cf24b66a4788a"
         },
         "12.2": {
             "plugin": "2.4.2",
