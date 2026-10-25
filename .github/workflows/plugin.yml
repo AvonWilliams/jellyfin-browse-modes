@@ -11,6 +11,14 @@ on:
 permissions:
   contents: write
 
+env:
+  # Jellyfin major.minor releases this plugin can be built and released for.
+  # A tag v<major>.<minor>.<patch> builds only the <major>.<minor> ABI, so its
+  # major.minor must be listed here. Add the new value (newest last) when a
+  # release has been tested; see RELEASING.md. Older ABIs are frozen at their
+  # existing manifest entries and are never rebuilt.
+  SUPPORTED_JELLYFIN: '12.3'
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -21,24 +29,40 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      # Release tags are v<jellyfin major>.<jellyfin minor>.<our patch>, e.g.
+      # v12.3.0. The first two numbers pick the Jellyfin ABI; the third is ours.
+      # Other builds (push / PR) compile against the newest supported release
+      # and get a throwaway 0.0.0.<run> version.
       - name: Resolve version
         id: version
         run: |
-          if [ "$GITHUB_REF_TYPE" = "tag" ]; then VERSION="${GITHUB_REF_NAME#v}"
-          else VERSION="0.0.0.${GITHUB_RUN_NUMBER}"; fi
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            if ! printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "::error::Tag '$GITHUB_REF_NAME' is not v<major>.<minor>.<patch>"
+              exit 1
+            fi
+            MAJOR_MINOR=$(printf '%s' "$VERSION" | cut -d. -f1,2)
+            if ! printf '%s\n' $SUPPORTED_JELLYFIN | grep -qxF "$MAJOR_MINOR"; then
+              echo "::error::Jellyfin $MAJOR_MINOR (from tag $GITHUB_REF_NAME) is not a supported release; supported: $SUPPORTED_JELLYFIN"
+              exit 1
+            fi
+          else
+            VERSION="0.0.0.${GITHUB_RUN_NUMBER}"
+            MAJOR_MINOR=$(printf '%s\n' $SUPPORTED_JELLYFIN | tail -1)
+          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Building $VERSION"
+          echo "abi=${MAJOR_MINOR}.0" >> "$GITHUB_OUTPUT"
+          echo "Building $VERSION for Jellyfin ${MAJOR_MINOR}.0"
 
-      # ── 12.0.0 ────────────────────────────────────────────────────────
-
-      - name: Build (12.0.0)
+      - name: Build
         run: |
           dotnet build plugin/Jellyfin.Plugin.BrowseModes/Jellyfin.Plugin.BrowseModes.csproj -c Release \
             -p:AssemblyVersion=${{ steps.version.outputs.version }} \
             -p:FileVersion=${{ steps.version.outputs.version }} \
-            -p:JellyfinVersion=12.0.0
+            -p:JellyfinVersion=${{ steps.version.outputs.abi }}
 
-      - name: Check shipped assemblies (12.0.0)
+      - name: Check shipped assemblies
         run: |
           cd plugin/Jellyfin.Plugin.BrowseModes/bin/Release/net10.0
           ls *.dll
@@ -48,116 +72,24 @@ jobs:
           fi
           test -f TMDbLib.dll || { echo "::error::TMDbLib.dll missing from output"; exit 1; }
 
-      - name: Package (12.0.0)
-        id: package-1200
+      - name: Package
+        id: package
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          mkdir -p dist/12.0.0/BrowseModes
-          cp plugin/Jellyfin.Plugin.BrowseModes/bin/Release/net10.0/*.dll dist/12.0.0/BrowseModes/
-          sed "s/__VERSION__/$VERSION/; s/__TARGET_ABI__/12.0.0.0/; s/__TIMESTAMP__/$(date -u +%Y-%m-%dT%H:%M:%SZ)/" \
-            plugin/meta.template.json > dist/12.0.0/BrowseModes/meta.json
-          cd dist/12.0.0/BrowseModes && zip -r ../../browse-modes_${VERSION}_12.0.0.zip . && cd ../../..
-          echo "checksum=$(md5sum dist/browse-modes_${VERSION}_12.0.0.zip | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-
-      # ── 12.1.0 ────────────────────────────────────────────────────────
-
-      - name: Build (12.1.0)
-        run: |
-          dotnet build plugin/Jellyfin.Plugin.BrowseModes/Jellyfin.Plugin.BrowseModes.csproj -c Release \
-            -p:AssemblyVersion=${{ steps.version.outputs.version }} \
-            -p:FileVersion=${{ steps.version.outputs.version }} \
-            -p:JellyfinVersion=12.1.0
-
-      - name: Check shipped assemblies (12.1.0)
-        run: |
-          cd plugin/Jellyfin.Plugin.BrowseModes/bin/Release/net10.0
-          ls *.dll
-          if ls | grep -qE '^(Jellyfin\.(Controller|Model|Data|Extensions)|MediaBrowser\.)'; then
-            echo "::error::A Jellyfin assembly is being shipped with the plugin"
-            exit 1
-          fi
-          test -f TMDbLib.dll || { echo "::error::TMDbLib.dll missing from output"; exit 1; }
-
-      - name: Package (12.1.0)
-        id: package-1210
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          mkdir -p dist/12.1.0/BrowseModes
-          cp plugin/Jellyfin.Plugin.BrowseModes/bin/Release/net10.0/*.dll dist/12.1.0/BrowseModes/
-          sed "s/__VERSION__/$VERSION/; s/__TARGET_ABI__/12.1.0.0/; s/__TIMESTAMP__/$(date -u +%Y-%m-%dT%H:%M:%SZ)/" \
-            plugin/meta.template.json > dist/12.1.0/BrowseModes/meta.json
-          cd dist/12.1.0/BrowseModes && zip -r ../../browse-modes_${VERSION}_12.1.0.zip . && cd ../../..
-          echo "checksum=$(md5sum dist/browse-modes_${VERSION}_12.1.0.zip | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-
-      # ── 12.2.0 ────────────────────────────────────────────────────────
-
-      - name: Build (12.2.0)
-        run: |
-          dotnet build plugin/Jellyfin.Plugin.BrowseModes/Jellyfin.Plugin.BrowseModes.csproj -c Release \
-            -p:AssemblyVersion=${{ steps.version.outputs.version }} \
-            -p:FileVersion=${{ steps.version.outputs.version }} \
-            -p:JellyfinVersion=12.2.0
-
-      - name: Check shipped assemblies (12.2.0)
-        run: |
-          cd plugin/Jellyfin.Plugin.BrowseModes/bin/Release/net10.0
-          ls *.dll
-          if ls | grep -qE '^(Jellyfin\.(Controller|Model|Data|Extensions)|MediaBrowser\.)'; then
-            echo "::error::A Jellyfin assembly is being shipped with the plugin"
-            exit 1
-          fi
-          test -f TMDbLib.dll || { echo "::error::TMDbLib.dll missing from output"; exit 1; }
-
-      - name: Package (12.2.0)
-        id: package-1220
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          mkdir -p dist/12.2.0/BrowseModes
-          cp plugin/Jellyfin.Plugin.BrowseModes/bin/Release/net10.0/*.dll dist/12.2.0/BrowseModes/
-          sed "s/__VERSION__/$VERSION/; s/__TARGET_ABI__/12.2.0.0/; s/__TIMESTAMP__/$(date -u +%Y-%m-%dT%H:%M:%SZ)/" \
-            plugin/meta.template.json > dist/12.2.0/BrowseModes/meta.json
-          cd dist/12.2.0/BrowseModes && zip -r ../../browse-modes_${VERSION}_12.2.0.zip . && cd ../../..
-          echo "checksum=$(md5sum dist/browse-modes_${VERSION}_12.2.0.zip | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-
-      # ── 12.3.0 ────────────────────────────────────────────────────────
-
-      - name: Build (12.3.0)
-        run: |
-          dotnet build plugin/Jellyfin.Plugin.BrowseModes/Jellyfin.Plugin.BrowseModes.csproj -c Release \
-            -p:AssemblyVersion=${{ steps.version.outputs.version }} \
-            -p:FileVersion=${{ steps.version.outputs.version }} \
-            -p:JellyfinVersion=12.3.0
-
-      - name: Check shipped assemblies (12.3.0)
-        run: |
-          cd plugin/Jellyfin.Plugin.BrowseModes/bin/Release/net10.0
-          ls *.dll
-          if ls | grep -qE '^(Jellyfin\.(Controller|Model|Data|Extensions)|MediaBrowser\.)'; then
-            echo "::error::A Jellyfin assembly is being shipped with the plugin"
-            exit 1
-          fi
-          test -f TMDbLib.dll || { echo "::error::TMDbLib.dll missing from output"; exit 1; }
-
-      - name: Package (12.3.0)
-        id: package-1230
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          mkdir -p dist/12.3.0/BrowseModes
-          cp plugin/Jellyfin.Plugin.BrowseModes/bin/Release/net10.0/*.dll dist/12.3.0/BrowseModes/
-          sed "s/__VERSION__/$VERSION/; s/__TARGET_ABI__/12.3.0.0/; s/__TIMESTAMP__/$(date -u +%Y-%m-%dT%H:%M:%SZ)/" \
-            plugin/meta.template.json > dist/12.3.0/BrowseModes/meta.json
-          cd dist/12.3.0/BrowseModes && zip -r ../../browse-modes_${VERSION}_12.3.0.zip . && cd ../../..
-          echo "checksum=$(md5sum dist/browse-modes_${VERSION}_12.3.0.zip | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          ABI="${{ steps.version.outputs.abi }}"
+          mkdir -p dist/$ABI/BrowseModes
+          cp plugin/Jellyfin.Plugin.BrowseModes/bin/Release/net10.0/*.dll dist/$ABI/BrowseModes/
+          sed "s/__VERSION__/$VERSION/; s/__TARGET_ABI__/$ABI.0/; s/__TIMESTAMP__/$(date -u +%Y-%m-%dT%H:%M:%SZ)/" \
+            plugin/meta.template.json > dist/$ABI/BrowseModes/meta.json
+          cd dist/$ABI/BrowseModes && zip -r ../../browse-modes_${VERSION}_${ABI}.zip . && cd ../../..
+          echo "checksum=$(md5sum dist/browse-modes_${VERSION}_${ABI}.zip | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
       # ── Report ────────────────────────────────────────────────────────
 
-      - name: Report checksums
+      - name: Report checksum
         run: |
           echo "### Plugin ${{ steps.version.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "12.0.0: \`${{ steps.package-1200.outputs.checksum }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "12.1.0: \`${{ steps.package-1210.outputs.checksum }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "12.2.0: \`${{ steps.package-1220.outputs.checksum }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "12.3.0: \`${{ steps.package-1230.outputs.checksum }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ steps.version.outputs.abi }}: \`${{ steps.package.outputs.checksum }}\`" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         with:
