@@ -44,7 +44,8 @@ port="$(cat "$work/port")"
 # Container NAME lives in $work/ctr/NAME: inspect.json and fs/ (its filesystem).
 # Container paths map to fs/<path>. Switches (files in $work): docker_denied,
 # curl_missing, wget_missing, cp_fail (one shot: the next copy INTO a container
-# fails).
+# fails), restart_fail (how many "docker restart" calls fail: a number or "all";
+# a failing restart leaves the server down, a good one brings it back).
 mkdir -p "$work/bin"
 cat > "$work/bin/docker" <<EOF
 #!/bin/bash
@@ -67,6 +68,15 @@ case "$cmd" in
     [ -e "$W/jf_down" ] && exit 1
     echo "127.0.0.1:$(cat "$W/port")" ;;
   restart)
+    if [ -s "$W/restart_fail" ]; then
+      n=$(cat "$W/restart_fail")
+      if [ "$n" != all ]; then
+        n=$((n - 1))
+        if [ "$n" -le 0 ]; then rm -f "$W/restart_fail"; else echo "$n" > "$W/restart_fail"; fi
+      fi
+      touch "$W/jf_down"; echo "Error response from daemon: cannot restart container" >&2; exit 1
+    fi
+    rm -f "$W/jf_down"
     exit 0 ;;
   ps)
     for d in "$W"/ctr/*/; do
@@ -165,7 +175,7 @@ cfgdir() { # cfgdir <name>: where the container's /config really lives
 }
 webdir() { printf '%s' "$work/ctr/$1/fs$(cat "$work/ctr/$1/webpath" 2>/dev/null || echo /jellyfin/jellyfin-web)"; }
 restarts() { grep -c '^restart' "$work/docker.log" 2>/dev/null || true; }
-reset_state() { rm -rf "${work:?}/state" "${work:?}/lib"; rm -f "$work/docker.log"; : > "$work/docker.log"; rm -f "$work"/{docker_denied,curl_missing,wget_missing,cp_fail,jf_down}; }
+reset_state() { rm -rf "${work:?}/state" "${work:?}/lib"; rm -f "$work/docker.log"; : > "$work/docker.log"; rm -f "$work"/{docker_denied,curl_missing,wget_missing,cp_fail,jf_down,restart_fail}; }
 
 # run_dk <args...>: runs the script against the scratch tree, output in $work/out.
 run_dk() {

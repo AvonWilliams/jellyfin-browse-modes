@@ -24,13 +24,17 @@ trap cleanup EXIT
 
 # ---- fake Jellyfin -----------------------------------------------------------
 # Version comes from $work/jf_version. It answers 503 while the web root holds a
-# bundle marked 9.9.9 (to simulate an update that breaks the server).
+# bundle marked 9.9.9 (to simulate an update that breaks the server) and while
+# $work/jf_down exists (the stub systemctl creates it on stop and on a failing
+# start, and removes it on a successful start).
 cat > "$work/fake_jf.py" <<'PY'
 import http.server, os, sys
 work = sys.argv[1]
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         marker = os.path.join(work, "web", ".browse-modes-version")
+        if os.path.exists(os.path.join(work, "jf_down")):
+            self.send_response(503); self.end_headers(); return
         if os.path.exists(marker) and open(marker).read().strip() == "9.9.9":
             self.send_response(503); self.end_headers(); return
         v = open(os.path.join(work, "jf_version")).read().strip()
@@ -50,10 +54,30 @@ port="$(cat "$work/port")"
 
 # ---- stub systemctl / crontab ------------------------------------------------
 mkdir -p "$work/bin"
+# Switches: $work/start_fail holds how many "systemctl start" calls fail (a
+# number, or "all"); a failing start leaves the server down. $work/stop_fail
+# makes "systemctl stop" fail.
 cat > "$work/bin/systemctl" <<EOF
 #!/bin/sh
-echo "\$*" >> "$work/systemctl.log"
+W="$work"
 EOF
+cat >> "$work/bin/systemctl" <<'STUB'
+echo "$*" >> "$W/systemctl.log"
+case "$1" in
+  stop) touch "$W/jf_down"; [ -e "$W/stop_fail" ] && exit 1 ;;
+  start)
+    if [ -s "$W/start_fail" ]; then
+      n=$(cat "$W/start_fail")
+      if [ "$n" != all ]; then
+        n=$((n - 1))
+        if [ "$n" -le 0 ]; then rm -f "$W/start_fail"; else echo "$n" > "$W/start_fail"; fi
+      fi
+      touch "$W/jf_down"; echo "Job for jellyfin.service failed" >&2; exit 1
+    fi
+    rm -f "$W/jf_down" ;;
+esac
+exit 0
+STUB
 cat > "$work/bin/crontab" <<EOF
 #!/bin/sh
 # File-backed fake of the crontab command: -l prints, - replaces.
@@ -77,7 +101,7 @@ run_installer() {
 
 reset_target() {
   rm -rf "${work:?}/plugins" "${work:?}/web" "${work:?}/state" "${work:?}/lib"
-  rm -f "${work:?}/systemctl.log"
+  rm -f "${work:?}/systemctl.log" "${work:?}/start_fail" "${work:?}/stop_fail" "${work:?}/jf_down"
   mkdir -p "$work/plugins" "$work/web"
 }
 
@@ -251,6 +275,41 @@ check "rollback is reported" contains "$work/out" "rolled back"
 check "rollback leaves no new marker" test ! -e "$work/web/.browse-modes-version"
 check "rollback records the result" contains "$work/state/state" "last_result=rolled-back"
 check "rollback restarts the server last" bash -c "tail -1 '$work/systemctl.log' | grep -q 'start jellyfin'"
+
+# A failing "systemctl start" (ExecStartPre failure, start-limit-hit) must not
+# end the run before the health check and the rollback.
+echo "== failing start"
+build_release 12.3.0 12.3.0 12.3
+reset_target; echo OLD > "$work/web/index.html"
+echo 1 > "$work/start_fail"
+run_installer; rc=$?
+check "failing first start: exit 1" test "$rc" -eq 1
+check "failing first start: files rolled back" contains "$work/web/index.html" "OLD"
+check "failing first start: no new marker" test ! -e "$work/web/.browse-modes-version"
+check "failing first start: state records rolled-back" contains "$work/state/state" "last_result=rolled-back"
+check "failing first start: reported as rolled back" contains "$work/out" "rolled back"
+check "failing first start: server started again by the rollback" bash -c "tail -1 '$work/systemctl.log' | grep -q 'start jellyfin'"
+check "failing first start: server answers after the rollback" test ! -e "$work/jf_down"
+check "failing first start: start failure is logged" contains "$work/state/updater.log" "systemctl start jellyfin failed"
+check "failing first start: rollback asks systemd to reset the failed state" contains "$work/systemctl.log" "reset-failed jellyfin"
+reset_target; echo OLD > "$work/web/index.html"
+echo all > "$work/start_fail"
+run_installer --auto; rc=$?
+check "start never works: exit 1" test "$rc" -eq 1
+check "start never works: files still rolled back" contains "$work/web/index.html" "OLD"
+check "start never works: state records rolled-back" contains "$work/state/state" "last_result=rolled-back"
+check "start never works: says Jellyfin is not answering" contains "$work/state/state" "not answering"
+check "start never works: one start per attempt, no duplicate from the exit trap" test "$(grep -c '^start jellyfin' "$work/systemctl.log")" -eq 2
+check "start never works: no repeated log line" test "$(grep -c 'Starting Jellyfin via systemctl' "$work/state/updater.log")" -eq 2
+# A failing stop changes nothing and is recorded as failed.
+reset_target; echo OLD > "$work/web/index.html"
+touch "$work/stop_fail"
+run_installer --auto; rc=$?
+check "failing stop: exit 1" test "$rc" -eq 1
+check "failing stop: files untouched" contains "$work/web/index.html" "OLD"
+check "failing stop: state records failed" contains "$work/state/state" "last_result=failed"
+check "failing stop: no half-done backup replaced anything" test ! -e "$work/web/.browse-modes-version"
+rm -f "$work/stop_fail"
 
 # ---- 5. auto-update switch ---------------------------------------------------
 echo "== cron"

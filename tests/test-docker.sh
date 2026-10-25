@@ -173,6 +173,30 @@ new_ctr vol volume; reset_state
 run_dk --docker vol; rc=$?
 check "named volume: failed health check restores plugin and web" bash -c "[ -f '$(cfgdir vol)/plugins/Browse Modes_2.2.0.0/meta.json' ] && [ ! -e '$(cfgdir vol)/plugins/Browse Modes_12.3.0' ] && grep -q STOCK '$(webdir vol)/index.html'"
 
+# "docker restart" itself fails (daemon error, container cannot start).
+echo "== failing restart"
+build_release 12.3.0 12.3.0 12.3
+new_ctr jf; reset_state
+echo 1 > "$work/restart_fail"
+run_dk --docker jf; rc=$?
+check "failing restart: exit 1" test "$rc" -eq 1
+check "failing restart: web root rolled back" contains "$(webdir jf)/index.html" "STOCK"
+check "failing restart: no new marker" test ! -e "$(webdir jf)/.browse-modes-version"
+check "failing restart: old plugin restored" test -f "$(cfgdir jf)/plugins/Browse Modes_2.2.0.0/meta.json"
+check "failing restart: new plugin removed" test ! -e "$(cfgdir jf)/plugins/Browse Modes_12.3.0"
+check "failing restart: state records rolled-back" contains "$(state_file jf)" "last_result=rolled-back"
+check "failing restart: rollback restarted the container again" test "$(restarts)" -eq 2
+check "failing restart: the failure is reported" contains "$work/out" "docker restart jf failed"
+check "failing restart: backup kept" bash -c "ls '$work'/state/backups/docker-jf/*/web/index.html"
+new_ctr jf; reset_state
+echo all > "$work/restart_fail"
+run_dk --auto --docker jf; rc=$?
+check "restart never works: exit 1" test "$rc" -eq 1
+check "restart never works: files still rolled back" contains "$(webdir jf)/index.html" "STOCK"
+check "restart never works: state records rolled-back" contains "$(state_file jf)" "last_result=rolled-back"
+check "restart never works: says Jellyfin is not answering" contains "$(state_file jf)" "not answering"
+check "restart never works: no duplicate log lines" test "$(grep -c 'Restarting container jf' "$work/state/updater.log")" -eq 2
+
 # A copy that fails halfway: restore from the backup, no restart.
 build_release 12.3.0 12.3.0 12.3
 new_ctr jf; reset_state

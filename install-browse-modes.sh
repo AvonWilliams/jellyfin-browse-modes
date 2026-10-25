@@ -931,20 +931,30 @@ tmp=$(mktemp -d)
 stopped=0
 
 # Start the server again after we stopped it. Idempotent: only acts when
-# $stopped is 1, so the EXIT trap can call it safely on every exit path.
+# $stopped is 1, so the EXIT trap can call it safely on every exit path. The
+# flag is cleared before the attempt, so a failed start is reported once and
+# the trap does not try (and log) it a second time. A failing systemctl must
+# not end the script under "set -e": callers go on to the health check and the
+# rollback, which is the whole point of having them.
 start_server() {
   if [ "$stopped" -ne 1 ]; then
     return 0
   fi
-  log "Starting Jellyfin via systemctl"
-  systemctl start jellyfin
   stopped=0
+  log "Starting Jellyfin via systemctl"
+  if ! systemctl start jellyfin; then
+    err "systemctl start jellyfin failed (see 'systemctl status jellyfin' and 'journalctl -u jellyfin')"
+    return 1
+  fi
 }
 
 stop_server() {
   log "Stopping Jellyfin via systemctl"
-  systemctl stop jellyfin
   stopped=1
+  if ! systemctl stop jellyfin; then
+    err "systemctl stop jellyfin failed"
+    return 1
+  fi
 }
 
 cleanup() {
@@ -1147,6 +1157,15 @@ installed_msg() {
   printf '%s for Jellyfin %s' "$m" "$version"
 }
 
+# Name for a new backup dir under $1: a timestamp, with a suffix when two runs
+# fall in the same second (the second copy would otherwise land inside the first).
+new_backup_dir() {
+  local d n=1
+  d="$1/$(date +%Y%m%d%H%M%S)"
+  while [ -e "$d" ]; do d="$1/$(date +%Y%m%d%H%M%S)-$n"; n=$((n + 1)); done
+  printf '%s' "$d"
+}
+
 # Keeps the newest KEEP_BACKUPS backup dirs under $backup_root.
 prune_backups() {
   local d
@@ -1160,7 +1179,7 @@ prune_backups() {
 # roll back on failure ----
 if [ -n "$CONTAINER" ]; then
   backup_root="$STATE_DIR/backups/docker-$CONTAINER"
-  backup="$backup_root/$(date +%Y%m%d%H%M%S)"
+  backup=$(new_backup_dir "$backup_root")
 
   apply_docker() {
     local d
@@ -1203,7 +1222,10 @@ if [ -n "$CONTAINER" ]; then
 
   restart_container() {
     log "Restarting container ${CONTAINER}"
-    docker restart "$CONTAINER" >/dev/null
+    if ! docker restart "$CONTAINER" >/dev/null; then
+      err "docker restart ${CONTAINER} failed"
+      return 1
+    fi
   }
 
   if ! apply_docker; then
@@ -1242,7 +1264,7 @@ fi
 
 # ---- native install: back up, replace, health-check, roll back on failure ----
 backup_root="$STATE_DIR/backups"
-backup="$backup_root/$(date +%Y%m%d%H%M%S)"
+backup=$(new_backup_dir "$backup_root")
 had_web=0
 
 apply_native() {
@@ -1286,7 +1308,7 @@ restore_native() {
   fi
 }
 
-stop_server
+stop_server || die "Could not stop Jellyfin; nothing was changed"
 if ! apply_native; then
   err "Applying the update failed; restoring the previous files from ${backup}"
   restore_native || true
@@ -1294,7 +1316,7 @@ if ! apply_native; then
   die "Update failed and was rolled back (backup kept in ${backup})"
 fi
 
-start_server
+start_server || true
 if health_check; then
   log "Jellyfin is healthy after the update."
   prune_backups
@@ -1308,6 +1330,8 @@ fi
 err "Jellyfin did not come back after the update; rolling back from ${backup}"
 stop_server || true
 restore_native || true
+# A unit that failed to start may be in start-limit-hit; let the rollback start it.
+systemctl reset-failed jellyfin >/dev/null 2>&1 || true
 start_server || true
 if health_check; then
   msg="Update failed health check; rolled back to the previous files (backup kept in ${backup})"
