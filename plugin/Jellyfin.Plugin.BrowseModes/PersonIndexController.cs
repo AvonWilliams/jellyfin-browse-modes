@@ -119,6 +119,18 @@ public class PersonIndexController : ControllerBase
         var user = ResolveUser(userId);
         var library = parentId.HasValue && !parentId.Value.IsEmpty() ? parentId : null;
 
+        // A library the caller may not open has no people for them. The item queries below do not
+        // refuse a parent the user cannot access, so this must be checked here.
+        if (library.HasValue && user is not null && !CanSeeLibrary(user, library.Value))
+        {
+            return Ok(new PersonIndexPageDto
+            {
+                StartIndex = startIndex,
+                Letters = includeLetters ? new Dictionary<string, int>() : null,
+                Source = "live"
+            });
+        }
+
         if (library.HasValue && CanUseIndex(user, library.Value))
         {
             var page = TryReadIndex(library.Value, personKind, order, startIndex, limit, prefix, includeLetters);
@@ -169,6 +181,11 @@ public class PersonIndexController : ControllerBase
             return false;
         }
 
+        return CanSeeLibrary(user, libraryId);
+    }
+
+    private bool CanSeeLibrary(User user, Guid libraryId)
+    {
         var library = _libraryManager.GetItemById(libraryId);
         return library is not null && library.IsVisible(user);
     }
