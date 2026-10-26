@@ -3,6 +3,13 @@
 Versions cover the project as a whole — plugin, web client and Android TV client are released
 together under one number, even when only one of them changed. Each entry says which parts moved.
 
+## 12.3.4 — Lighter glass on the browse tiles
+
+**Web client** only. Plugin and Android TV are unchanged.
+
+- The browse tiles use a 4px backdrop blur instead of 14px (10px on picker tiles), so they read as
+  their own surface next to the heading tiles, which keep the stronger 14px frost.
+
 ## 12.3.3 — New browse mode icons
 
 **Web client** only. Plugin and Android TV are unchanged.
