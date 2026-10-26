@@ -3,6 +3,13 @@
 Versions cover the project as a whole — plugin, web client and Android TV client are released
 together under one number, even when only one of them changed. Each entry says which parts moved.
 
+## 12.3.3 — New browse mode icons
+
+**Web client** only. Plugin and Android TV are unchanged.
+
+- Every browse mode icon is replaced with the new muted pastel set. Filenames are unchanged, so no
+  behaviour changes.
+
 ## 12.3.2 — Glass heading tiles and a softer backdrop
 
 **Web client** only. Plugin and Android TV are unchanged.
