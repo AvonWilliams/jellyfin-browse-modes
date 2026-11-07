@@ -952,7 +952,7 @@ EOF
   cat <<EOF
 
 Installed local copy: ${LIB_DIR}/updater.sh (owned by $(id -un), sha256 ${src_sum})
-It runs once a day, between 02:00 and 05:59, and only changes anything when
+It runs every 3 hours, and only changes anything when
 compat.json lists a tested release for your Jellyfin version. Results go to
 ${LOG_FILE} and syslog.
 EOF
