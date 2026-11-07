@@ -8,6 +8,12 @@ together under one number, even when only one of them changed. Each entry says w
 **Plugin** rebuilt against Jellyfin 12.4 (EF Core 10.0.14). **Web client** rebased onto
 jellyfin-web 12.4. No feature changes. Android TV is unchanged.
 
+**Installer** (served from `main`, not tied to a release): the auto-update cron job now runs every
+3 hours (`<minute> */3 * * *`) instead of once a day, so a new Jellyfin version is picked up within
+hours, and a failed run (for example a network error) is retried the same day. The minute is still
+random and kept when you re-run. Running `--enable-auto-update` again turns an existing daily job
+into the 3-hourly one without changing its minute.
+
 ## 12.3.4 — Lighter glass on the browse tiles
 
 **Web client** only. Plugin and Android TV are unchanged.
