@@ -6,8 +6,8 @@
     <ImplicitUsings>false</ImplicitUsings>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
-    <AssemblyVersion>12.3.1.0</AssemblyVersion>
-    <FileVersion>12.3.1.0</FileVersion>
+    <AssemblyVersion>12.4.0.0</AssemblyVersion>
+    <FileVersion>12.4.0.0</FileVersion>
     <RootNamespace>Jellyfin.Plugin.BrowseModes</RootNamespace>
     <!-- Override with -p:JellyfinVersion=<ver> to target a different server release. -->
     <JellyfinVersion>12.1.0</JellyfinVersion>
@@ -35,8 +35,8 @@
 
     <!-- The server ships its own EF Core Sqlite provider (its default database is SQLite), so this
          is referenced at compile time only and reuses the server's loaded assemblies, matching the
-         Jellyfin.* packages above. Version must equal the server's (Jellyfin 12.1.0 = 10.0.11). -->
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.11" ExcludeAssets="runtime" />
+         Jellyfin.* packages above. Version must equal the server's (Jellyfin 12.4.0 = 10.0.14). -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.14" ExcludeAssets="runtime" />
 
     <!-- Not shipped by the server, so this one does need to travel with the plugin. -->
     <PackageReference Include="TMDbLib" Version="3.0.0" />

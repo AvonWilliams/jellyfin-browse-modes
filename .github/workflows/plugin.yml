@@ -17,7 +17,7 @@ env:
   # major.minor must be listed here. Add the new value (newest last) when a
   # release has been tested; see RELEASING.md. Older ABIs are frozen at their
   # existing manifest entries and are never rebuilt.
-  SUPPORTED_JELLYFIN: '12.3'
+  SUPPORTED_JELLYFIN: '12.3 12.4'
 
 jobs:
   build:

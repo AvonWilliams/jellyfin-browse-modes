@@ -3,6 +3,11 @@
 Versions cover the project as a whole — plugin, web client and Android TV client are released
 together under one number, even when only one of them changed. Each entry says which parts moved.
 
+## 12.4.0 — Jellyfin 12.4 support
+
+**Plugin** rebuilt against Jellyfin 12.4 (EF Core 10.0.14). **Web client** rebased onto
+jellyfin-web 12.4. No feature changes. Android TV is unchanged.
+
 ## 12.3.4 — Lighter glass on the browse tiles
 
 **Web client** only. Plugin and Android TV are unchanged.
