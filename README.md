@@ -167,9 +167,9 @@ Plan:
 Go ahead with these 2 server(s)? [Y/n] y
 ... (progress for each server) ...
 
-Automatic updates (optional): a daily job re-checks each server and installs the tested
+Automatic updates (optional): a job that runs every 3 hours re-checks each server and installs the tested
 release when one exists, for example after a Jellyfin upgrade. Nothing is enabled unless you say yes.
-Enable daily automatic updates for native? [y/N] n
+Enable automatic updates for native? [y/N] n
 
 Summary
 =======
@@ -268,7 +268,7 @@ web bundle alone and still updates the plugin.
 ### Automatic updates (optional)
 
 Off by default. If you want a tested release applied without remembering to run the script, it can
-install a daily job that runs its own saved copy. It never fetches and runs a script from the
+install a job that runs every 3 hours from its own saved copy. It never fetches and runs a script from the
 internet on each run. Use a saved copy, not `curl | bash`, because the copy you inspected is the
 one that is stored:
 
@@ -288,16 +288,17 @@ of the user who ran it. There is **one line per server**, and they can coexist. 
 like this:
 
 ```cron
-27 3 * * * /usr/local/lib/browse-modes/updater.sh --auto # browse-modes-auto-update
+27 */3 * * * /usr/local/lib/browse-modes/updater.sh --auto # browse-modes-auto-update
 ```
 
 and a Docker line (one per container) like this:
 
 ```cron
-41 2 * * * PATH=/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /usr/local/lib/browse-modes/updater.sh --auto --docker jellyfin # browse-modes-auto-update docker:jellyfin
+41 */3 * * * PATH=/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /usr/local/lib/browse-modes/updater.sh --auto --docker jellyfin # browse-modes-auto-update docker:jellyfin
 ```
 
-The minute and hour are picked at random between 02:00 and 05:59 and kept when you re-run. The
+The job runs every 3 hours (hours 0, 3, 6 ... 21). The minute is picked at random and kept when you
+re-run; re-running also upgrades an older daily line to every 3 hours. The
 `PATH=` part is there because cron starts with a short `PATH` that often lacks the folder `docker`
 lives in; the script puts the folder it found at enable time first.
 

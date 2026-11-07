@@ -97,8 +97,8 @@ Other options:
                          /var/lib/browse-modes-updater/updater.log and syslog,
                          exits 0 when there is nothing to do (also when the
                          Docker container is missing or stopped). Never asks.
-  --enable-auto-update   Install a local copy of this script and add one daily
-                         cron job that runs it with --auto. With --docker or
+  --enable-auto-update   Install a local copy of this script and add one
+                         cron job (every 3 hours) that runs it with --auto. With --docker or
                          --target docker:NAME, one job per container (the
                          invoking user needs docker access)
   --disable-auto-update  Remove that cron job (only the one for the given
@@ -928,13 +928,14 @@ EOF
   marker=$(job_marker)
   current=$(crontab -l 2>/dev/null || true)
   existing=$(printf '%s\n' "$current" | cron_filter keep "$marker" | head -1 || true)
-  if [[ "$existing" =~ ^([0-9]+)[[:space:]]+([0-9]+)[[:space:]] ]]; then
-    # Keep the schedule picked the first time so re-running does not churn it.
-    min="${BASH_REMATCH[1]}"; hour="${BASH_REMATCH[2]}"
+  if [[ "$existing" =~ ^([0-9]+)[[:space:]] ]]; then
+    # Keep the minute picked the first time so re-running does not churn it. The hour field is
+    # always every 3 hours, so an older daily line is upgraded in place.
+    min="${BASH_REMATCH[1]}"
   else
-    min=$((RANDOM % 60)); hour=$((2 + RANDOM % 4))
+    min=$((RANDOM % 60))
   fi
-  new_line="$min $hour * * * ${cron_path}$LIB_DIR/updater.sh $args $marker"
+  new_line="$min */3 * * * ${cron_path}$LIB_DIR/updater.sh $args $marker"
 
   if [ "$(printf '%s\n' "$current" | cron_filter keep "$marker" | grep -c . || true)" = "1" ] && [ "$existing" = "$new_line" ]; then
     echo "Auto-update was already enabled; nothing added to the crontab."
@@ -1991,7 +1992,7 @@ result_label() { # result_label <result file> <rc>
   esac
 }
 
-# After a successful interactive install, offers the daily automatic update per target.
+# After a successful interactive install, offers the automatic update (every 3 hours) per target.
 offer_auto_update() {
   local idx=0 t lbl line shown=0
   for t in "${RUN_TARGETS[@]}"; do
@@ -2002,11 +2003,11 @@ offer_auto_update() {
         if [ -z "$line" ]; then
           if [ "$shown" -eq 0 ]; then
             echo
-            echo "Automatic updates (optional): a daily job re-checks each server and installs the tested"
+            echo "Automatic updates (optional): a job that runs every 3 hours re-checks each server and installs the tested"
             echo "release when one exists, for example after a Jellyfin upgrade. Nothing is enabled unless you say yes."
             shown=1
           fi
-          if confirm "Enable daily automatic updates for ${t}?" n; then
+          if confirm "Enable automatic updates for ${t}?" n; then
             if ( set +e; set_target "$t"; do_enable ); then :; else echo "Could not enable automatic updates for ${t}; see above." >&2; fi
             ENABLED_NOW+=("$t")
           fi

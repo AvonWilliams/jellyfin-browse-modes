@@ -190,7 +190,7 @@ check "no terminal and no target: native only, with a message" bash -c "grep -q 
 reset_all; native_up; new_ctr jfa
 run_ix - --yes; rc=$?
 check "--yes without a terminal installs on every supported server" bash -c "grep -q 12.3.0 '$work/web/index.html' && ! grep -q STOCK '$(webdir jfa)/index.html'"
-check "--yes does not ask anything" bash -c "! grep -q 'Go ahead\|Which servers\|Enable daily' '$work/out'"
+check "--yes does not ask anything" bash -c "! grep -q 'Go ahead\|Which servers\|Enable automatic' '$work/out'"
 check "--yes exits 0" test "$rc" -eq 0
 reset_all; native_up; new_ctr jfa; new_ctr jfb; echo 12.9.1 > "$work/ctr/jfb/version"
 run_ix - --all; rc=$?
@@ -374,7 +374,7 @@ echo "== auto-update question"
 reset_all; native_up; new_ctr jfa; new_ctr jfb
 answers 2-3 y y n
 run_ix "$work/answers"; rc=$?
-check "the auto-update question is asked per target" test "$(grep -c "Enable daily automatic updates" "$work/out")" -eq 2
+check "the auto-update question is asked per target" test "$(grep -c "Enable automatic updates" "$work/out")" -eq 2
 check "yes adds a cron line for that target" contains "$work/crontab.txt" "docker:jfa"
 check "no adds nothing for the other" lacks "$work/crontab.txt" "docker:jfb"
 check "summary shows auto-update enabled for the first" bash -c "grep -A5 '^  docker:jfa' '$work/out' | grep -q 'Auto-update:  enabled'"

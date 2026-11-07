@@ -409,7 +409,7 @@ dockerdir="$work/bin"
 run_dk --enable-auto-update --docker a; rc=$?
 check "docker enable succeeds" test "$rc" -eq 0
 check "docker enable adds one line for the container" test "$(grep -c '# browse-modes-auto-update docker:a$' "$work/crontab.txt")" -eq 1
-check "docker line runs the local copy with --auto --docker" grep -qE "^[0-9]+ [2-5] \* \* \* PATH=$dockerdir:[^ ]+ $work/lib/updater.sh --auto --docker a # browse-modes-auto-update docker:a$" "$work/crontab.txt"
+check "docker line runs the local copy with --auto --docker" grep -qE "^[0-9]+ \*/3 \* \* \* PATH=$dockerdir:[^ ]+ $work/lib/updater.sh --auto --docker a # browse-modes-auto-update docker:a$" "$work/crontab.txt"
 check "docker line puts docker's directory first in PATH" grep -qE "PATH=$dockerdir:/usr/local/sbin" "$work/crontab.txt"
 check "docker enable keeps other crontab lines" bash -c "grep -q '# keep me' '$work/crontab.txt' && grep -q other-job '$work/crontab.txt'"
 check "local copy installed" cmp -s "$script" "$work/lib/updater.sh"
@@ -423,7 +423,7 @@ check "enable for a stopped container notes it" contains "$work/out" "is not run
 run_dk --enable-auto-update; rc=$?
 check "native enable coexists" test "$rc" -eq 0
 check "now three marked lines" test "$(grep -c 'browse-modes-auto-update' "$work/crontab.txt")" -eq 3
-check "native line ends in the plain marker" grep -qE "^[0-9]+ [2-5] \* \* \* $work/lib/updater.sh --auto # browse-modes-auto-update$" "$work/crontab.txt"
+check "native line ends in the plain marker" grep -qE "^[0-9]+ \*/3 \* \* \* $work/lib/updater.sh --auto # browse-modes-auto-update$" "$work/crontab.txt"
 run_dk --enable-auto-update --docker nosuch; rc=$?
 check "enable refuses an unknown container" test "$rc" -ne 0
 check "refused enable added no line" test "$(grep -c 'browse-modes-auto-update' "$work/crontab.txt")" -eq 3

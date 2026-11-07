@@ -432,7 +432,7 @@ check "enable succeeds" test "$rc" -eq 0
 check "enable adds exactly one marked line" test "$(grep -c '# browse-modes-auto-update' "$work/crontab.txt")" -eq 1
 check "enable keeps other crontab lines" contains "$work/crontab.txt" "/usr/bin/other-job"
 check "enable keeps comments" contains "$work/crontab.txt" "# keep me"
-check "cron line runs the local copy with --auto" grep -qE "^[0-9]+ [2-5] \* \* \* $work/lib/updater.sh --auto .*# browse-modes-auto-update$" "$work/crontab.txt"
+check "cron line runs the local copy with --auto" grep -qE "^[0-9]+ \*/3 \* \* \* $work/lib/updater.sh --auto .*# browse-modes-auto-update$" "$work/crontab.txt"
 check "cron line does not use curl" lacks "$work/crontab.txt" "curl"
 check "local copy installed with mode 755" bash -c "[ \"\$(stat -c %a '$work/lib/updater.sh')\" = 755 ]"
 check "local copy is identical to the script" cmp -s "$script" "$work/lib/updater.sh"
@@ -444,6 +444,12 @@ check "enable twice: still exactly one marked line" test "$(grep -c '# browse-mo
 check "enable twice: crontab byte-identical" cmp -s "$work/crontab.txt" "$work/crontab.before"
 check "enable twice: schedule unchanged" contains "$work/crontab.txt" "$first"
 check "enable twice says already enabled" contains "$work/out" "already enabled"
+# An older daily line is upgraded to every 3 hours and keeps its minute.
+printf '%s\n' '# keep me' '0 1 * * * /usr/bin/other-job' "17 3 * * * $work/lib/updater.sh --auto # browse-modes-auto-update" > "$work/crontab.txt"
+run_installer --enable-auto-update; rc=$?
+check "daily line upgrade succeeds" test "$rc" -eq 0
+check "daily line becomes every 3 hours, same minute" grep -qE "^17 \*/3 \* \* \* $work/lib/updater.sh --auto .*# browse-modes-auto-update$" "$work/crontab.txt"
+check "daily line upgrade leaves exactly one marked line" test "$(grep -c '# browse-modes-auto-update' "$work/crontab.txt")" -eq 1
 run_installer --status; rc=$?
 check "status reports auto-update enabled" contains "$work/out" "Auto-update:          enabled"
 check "status shows the running Jellyfin version" contains "$work/out" "12.3.0"
